@@ -8,7 +8,13 @@ import { generateObjectSafe } from "../ai-utils";
 export interface JudgeInput {
   rawText: string;
   choices: string[];
-  sliders: { id: SliderId; value: number }[]; // value: 0–100
+  sliders: {
+    id: SliderId;
+    value: number;
+    label?: string;
+    low?: string;
+    high?: string;
+  }[]; // value: 0-100
   city: string | null; // from x-vercel-ip-city, may be null locally
 }
 
@@ -23,12 +29,15 @@ export async function judge(input: JudgeInput): Promise<JudgeResult> {
   const sliderContext = input.sliders
     .map((s) => {
       const meta = SLIDER_META[s.id];
-      return `- ${meta.label}: ${s.value}/100 ("${meta.low}" → "${meta.high}"). ${meta.judgeHint}`;
+      const label = s.label ?? meta.label;
+      const low = s.low ?? meta.low;
+      const high = s.high ?? meta.high;
+      return `- ${label}: ${s.value}/100 ("${low}" -> "${high}"). Canonical dimension: ${meta.label}. ${meta.judgeHint}`;
     })
     .join("\n");
 
   const { text } = await generateText({
-    model: groq("llama-3.3-70b-versatile"),
+    model: groq("openai/gpt-oss-120b"),
     tools: { getWeather, getTimeContext },
     stopWhen: stepCountIs(5),
     system: `You are a ruthless, logical decision judge. Choices: ${JSON.stringify(input.choices)}.
@@ -43,17 +52,25 @@ Process:
 2. Score each choice 0-100 against the slider values and any real-world context.
 3. Declare exactly one winner from the choices list, verbatim.
 
-End your reply with a final summary: winner, a 0-100 score per choice with a one-line note each, and which real-world facts you used.`,
+Separate your evidence:
+- contextUsed: ONLY external facts from tools or objective timing/location facts. If none, say none; do not put slider reasoning here.
+- reasoningUsed: internal tradeoffs, slider effects, and why the winner beat the alternatives.
+
+End your reply with a final summary: winner, a 0-100 score per choice with a one-line note each, contextUsed, and reasoningUsed.`,
     prompt: `Original brain dump: "${input.rawText}"\n\nJudge it.`,
   });
 
   // Structuring pass: convert the judge's free-text ruling into strict JSON.
   const object = await generateObjectSafe({
-    model: groq("llama-3.1-8b-instant"),
+    model: groq("openai/gpt-oss-120b"),
     schema: JudgeSchema,
-    system: `Convert the ruling into JSON. The winner MUST be one of: ${JSON.stringify(input.choices)}. Copy scores and notes faithfully; do not invent facts.`,
+    system: `Convert the ruling into JSON. The winner MUST be one of: ${JSON.stringify(input.choices)}. Copy scores and notes faithfully; do not invent facts.
+
+Rules:
+- contextUsed must contain ONLY real external facts from tool calls, time, weather, or location. If no external facts were used, return [].
+- reasoningUsed must contain slider effects, tradeoffs, and internal judgment reasons.`,
     prompt: text,
-    shapeHint: `{"winner": "...", "scores": [{"choice": "...", "score": 0-100, "note": "..."}], "contextUsed": ["..."]}`,
+    shapeHint: `{"winner": "...", "scores": [{"choice": "...", "score": 0-100, "note": "..."}], "contextUsed": ["..."], "reasoningUsed": ["..."]}`,
   });
 
   // Guard: if the model mangled the winner label, snap to closest choice.

@@ -38,7 +38,13 @@ export async function analyzeAction(rawText: string): Promise<
 export async function decideAction(input: {
   rawText: string;
   choices: string[];
-  sliders: { id: SliderId; value: number }[];
+  sliders: {
+    id: SliderId;
+    value: number;
+    label?: string;
+    low?: string;
+    high?: string;
+  }[];
 }): Promise<{ ok: true; data: Verdict } | { ok: false; error: string }> {
   if (input.choices.length < 2) {
     return { ok: false, error: "Need at least two choices to judge." };
@@ -60,6 +66,7 @@ export async function decideAction(input: {
         witty,
         scores: ruling.scores,
         contextUsed: ruling.contextUsed,
+        reasoningUsed: ruling.reasoningUsed,
       },
     };
   } catch (e) {
