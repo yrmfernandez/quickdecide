@@ -29,7 +29,8 @@ export async function analyzeAction(rawText: string): Promise<
     return { ok: true, data };
   } catch (e) {
     console.error("classify failed:", e);
-    return { ok: false, error: "The classifier choked on that. Try rephrasing." };
+    const detail = e instanceof Error ? e.message.slice(0, 200) : "unknown error";
+    return { ok: false, error: `Classifier error: ${detail}` };
   }
 }
 
@@ -62,6 +63,7 @@ export async function decideAction(input: {
     };
   } catch (e) {
     console.error("judge/writer failed:", e);
-    return { ok: false, error: "The judge is deliberating too hard. Try again." };
+    const detail = e instanceof Error ? e.message.slice(0, 200) : "unknown error";
+    return { ok: false, error: `Judge error: ${detail}` };
   }
 }

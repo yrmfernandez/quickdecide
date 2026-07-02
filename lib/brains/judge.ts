@@ -1,8 +1,9 @@
-import { generateText, generateObject, stepCountIs } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { JudgeSchema, type JudgeResult } from "../schemas";
 import { SLIDER_META, type SliderId } from "../sliders";
 import { getWeather, getTimeContext } from "../tools";
+import { generateObjectSafe } from "../ai-utils";
 
 export interface JudgeInput {
   rawText: string;
@@ -47,11 +48,12 @@ End your reply with a final summary: winner, a 0-100 score per choice with a one
   });
 
   // Structuring pass: convert the judge's free-text ruling into strict JSON.
-  const { object } = await generateObject({
+  const object = await generateObjectSafe({
     model: groq("llama-3.1-8b-instant"),
     schema: JudgeSchema,
     system: `Convert the ruling into JSON. The winner MUST be one of: ${JSON.stringify(input.choices)}. Copy scores and notes faithfully; do not invent facts.`,
     prompt: text,
+    shapeHint: `{"winner": "...", "scores": [{"choice": "...", "score": 0-100, "note": "..."}], "contextUsed": ["..."]}`,
   });
 
   // Guard: if the model mangled the winner label, snap to closest choice.

@@ -1,7 +1,7 @@
-import { generateObject } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { ClassifierSchema, type ClassifierResult } from "../schemas";
 import { SLIDER_META, SLIDER_IDS } from "../sliders";
+import { generateObjectSafe } from "../ai-utils";
 
 /**
  * Brain 1 — The Classifier (Llama-3.1-8B, ultra-fast).
@@ -17,7 +17,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     (id) => `- ${id}: "${SLIDER_META[id].label}" (${SLIDER_META[id].judgeHint})`
   ).join("\n");
 
-  const { object } = await generateObject({
+  const object = await generateObjectSafe({
     model: groq("llama-3.1-8b-instant"),
     schema: ClassifierSchema,
     system: `You extract decision options from messy human text and pick relevant UI sliders.
@@ -26,6 +26,7 @@ Rules:
 - Pick exactly TWO DIFFERENT sliders from this catalog, choosing the two dimensions most in tension for THIS decision:
 ${sliderCatalog}`,
     prompt: rawText,
+    shapeHint: `{"choices": ["...", "..."], "sliders": ["slider_id", "slider_id"]} — slider ids MUST come from: ${SLIDER_IDS.join(", ")}`,
   });
 
   // Belt-and-suspenders: dedupe sliders if the model repeated one.
