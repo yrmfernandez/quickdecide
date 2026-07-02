@@ -1,7 +1,8 @@
-__pycache__/
-*.pyc
-.venv/
-venv/
+node_modules/
+.next/
 .env
-.streamlit/secrets.toml
+.env.local
+*.tsbuildinfo
+next-env.d.ts
 .DS_Store
+.vercel
