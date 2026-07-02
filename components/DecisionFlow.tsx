@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { analyzeAction, decideAction } from "@/app/actions";
+import { analyzeAction, decideAction, instantDecideAction } from "@/app/actions";
 import type { Verdict } from "@/lib/schemas";
 import { SLIDER_META, type SliderId } from "@/lib/sliders";
 
@@ -12,6 +12,7 @@ const DECIDE_STATUS = ["Checking the real world", "Weighing the options", "Print
 
 export default function DecisionFlow() {
   const [stage, setStage] = useState<Stage>("dump");
+  const [mode, setMode] = useState<"instant" | "deep">("instant");
   const [rawText, setRawText] = useState("");
   const [choices, setChoices] = useState<string[]>([]);
   const [sliderIds, setSliderIds] = useState<SliderId[]>([]);
@@ -34,6 +35,7 @@ export default function DecisionFlow() {
     if (statusTimer.current) clearInterval(statusTimer.current);
   }
 
+  // Path A: 3-Brain Pipeline
   function analyze() {
     setError(null);
     setStage("analyzing");
@@ -85,11 +87,48 @@ export default function DecisionFlow() {
     });
   }
 
-  function reset() {
+  // Path B: 1-Brain Monolith
+  function instantDecide() {
+    setError(null);
+    setStage("deciding");
+    cycleStatus(DECIDE_STATUS.length);
+    const t0 = performance.now();
+    startTransition(async () => {
+      const res = await instantDecideAction(rawText);
+      stopStatus();
+      if (!res.ok) {
+        setError(res.error);
+        setStage("dump");
+        return;
+      }
+      // Populate choices from the monolith's score array so the UI renders correctly
+      setChoices(res.data.scores.map(s => s.choice)); 
+      setSliderIds([]); // Explicitly empty since we bypassed Brain 1
+      
+      setElapsed(((performance.now() - t0) / 1000).toFixed(1));
+      setDecidedAt(
+        new Date()
+          .toLocaleString("en-US", {
+            weekday: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          })
+          .toUpperCase()
+      );
+      setVerdict(res.data);
+      setStage("verdict");
+    });
+  }
+
+  // Updated reset function: accepts a boolean to conditionally clear the text box
+  function reset(keepText = false) {
     setStage("dump");
-    setRawText("");
+    if (!keepText) {
+      setRawText("");
+    }
     setChoices([]);
     setSliderIds([]);
+    setValues({});
     setVerdict(null);
     setCopied(false);
     setError(null);
@@ -130,7 +169,7 @@ export default function DecisionFlow() {
         </div>
 
         <div className="app-body">
-          {(stage === "dump" || stage === "analyzing") && (
+          {(stage === "dump" || stage === "analyzing" || (stage === "deciding" && mode === "instant")) && !verdict && (
             <section>
               <p className="field-label">What are you deciding between?</p>
               <textarea
@@ -138,27 +177,85 @@ export default function DecisionFlow() {
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 placeholder={'"We\'re stuck between getting tacos, cooking some dry pasta, or ordering a quick pepperoni pizza."'}
-                disabled={stage === "analyzing"}
+                disabled={stage === "analyzing" || stage === "deciding"}
                 aria-label="Describe what you are deciding between"
               />
+              
+              {/* Compact, Left-Aligned Segmented Switch */}
+              <div 
+                style={{
+                  display: "inline-flex",
+                  background: "rgba(255, 255, 255, 0.04)", 
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  borderRadius: "4px",
+                  padding: "4px",
+                  marginBottom: "1.25rem",
+                  gap: "4px"
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setMode("instant")}
+                  disabled={stage === "analyzing" || stage === "deciding"}
+                  style={{
+                    padding: "6px 12px",
+                    background: mode === "instant" ? "rgb(237, 230, 211)" : "transparent",
+                    color: mode === "instant" ? "#1a1a1a" : "rgba(237, 230, 211, 0.4)",
+                    border: "none",
+                    borderRadius: "2px",
+                    cursor: (stage === "analyzing" || stage === "deciding") ? "not-allowed" : "pointer",
+                    fontSize: "0.75rem",
+                    fontFamily: "inherit",
+                    fontWeight: mode === "instant" ? "bold" : "normal",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  Instant
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("deep")}
+                  disabled={stage === "analyzing" || stage === "deciding"}
+                  style={{
+                    padding: "6px 12px",
+                    background: mode === "deep" ? "rgb(237, 230, 211)" : "transparent",
+                    color: mode === "deep" ? "#1a1a1a" : "rgba(237, 230, 211, 0.4)",
+                    border: "none",
+                    borderRadius: "2px",
+                    cursor: (stage === "analyzing" || stage === "deciding") ? "not-allowed" : "pointer",
+                    fontSize: "0.75rem",
+                    fontFamily: "inherit",
+                    fontWeight: mode === "deep" ? "bold" : "normal",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  Fun Deep Analysis
+                </button>
+              </div>
+
               <button
                 className="decide-btn"
-                onClick={analyze}
-                disabled={stage === "analyzing" || rawText.trim().length < 8}
+                onClick={mode === "instant" ? instantDecide : analyze}
+                disabled={stage === "analyzing" || stage === "deciding" || rawText.trim().length < 8}
               >
-                Analyze →
+                {mode === "instant" ? "Decide instantly →" : "Analyze →"}
               </button>
-              {stage === "analyzing" && (
-                <div className="loading" role="status">
+              
+              {(stage === "analyzing" || stage === "deciding") && (
+                <div className="loading" role="status" style={{ marginTop: 14 }}>
                   <div className="bar" />
-                  <p className="status">{ANALYZE_STATUS[statusIdx]}…</p>
+                  <p className="status">{(stage === "analyzing" ? ANALYZE_STATUS : DECIDE_STATUS)[statusIdx]}…</p>
                 </div>
               )}
               {error && <p className="error">{error}</p>}
             </section>
           )}
 
-          {(stage === "sliders" || stage === "deciding") && (
+          {(stage === "sliders" || (stage === "deciding" && mode === "deep")) && (
             <section>
               <p className="field-label">Detected options</p>
               <div className="choices">
@@ -202,7 +299,8 @@ export default function DecisionFlow() {
                 Decide for me →
               </button>
               <div className="actions" style={{ marginTop: 14 }}>
-                <button className="btn" onClick={reset} disabled={stage === "deciding"}>
+                {/* Note: Explicitly passing false here so backing out of sliders clears the text */}
+                <button className="btn" onClick={() => reset(false)} disabled={stage === "deciding"}>
                   ↺ Start over
                 </button>
               </div>
@@ -246,12 +344,15 @@ export default function DecisionFlow() {
                   <hr />
                   <div className="r-why">{verdict.witty}</div>
                   <hr />
-                  {sliderIds.map((id) => (
+                  
+                  {/* Conditionally render sliders on the receipt only if they exist (3-Brain) */}
+                  {sliderIds.length > 0 && sliderIds.map((id) => (
                     <div className="r-meta" key={id}>
                       <span>{SLIDER_META[id].label}</span>
                       <span>{values[id] ?? 50}/100</span>
                     </div>
                   ))}
+                  
                   <div className="r-meta">
                     <span>Options weighed</span>
                     <span>{verdict.scores.length}</span>
@@ -269,8 +370,12 @@ export default function DecisionFlow() {
                 </div>
               </div>
 
+              {/* The clean 3-button layout */}
               <div className="actions">
-                <button className="btn" onClick={reset}>
+                <button className="btn" onClick={() => reset(false)}>
+                  ↺ Start over
+                </button>
+                <button className="btn" onClick={() => reset(true)}>
                   ↻ Decide again
                 </button>
                 <button className="btn" onClick={copyResult}>
