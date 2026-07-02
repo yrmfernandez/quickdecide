@@ -82,6 +82,10 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     You DO NOT explain your reasoning.
     You DO NOT invent information.
 
+    If the prompt is weird, hypothetical, chaotic, multilingual, or written like a stream of consciousness,
+    extract the literal decision options first. Do not improve the user's options into different actions.
+    Brain 2 can analyze complexity later; your job is faithful parsing.
+
     ==================================================
     STEP 1 — EXTRACT THE CHOICES
     ==================================================
@@ -156,6 +160,10 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     Preserve important wording whenever possible.
 
     Keep each choice concise (roughly 2–7 words).
+
+    If the user writes "A or B or C", extract A, B, and C as separate choices.
+    If the user writes "should I X or Y", extract "X" and "Y".
+    If the user implies a tie or says both options seem the same, still extract the options normally.
 
     Once the choices are extracted,
     consider them FINAL.

@@ -5,7 +5,7 @@ import { classify } from "@/lib/brains/classifier";
 import { judge } from "@/lib/brains/judge";
 import { write } from "@/lib/brains/writer";
 import { runMonobrain } from "@/lib/brains/monolith";
-import type { ClassifierResult, Verdict } from "@/lib/schemas";
+import type { ClassifierResult, DecisionMode, ModelChoice, Verdict } from "@/lib/schemas";
 import type { SliderId } from "@/lib/sliders";
 
 /**
@@ -45,6 +45,9 @@ export async function decideAction(input: {
     low?: string;
     high?: string;
   }[];
+  mode: Exclude<DecisionMode, "instant">;
+  modelChoice: ModelChoice;
+  wildcardAllowed: boolean;
 }): Promise<{ ok: true; data: Verdict } | { ok: false; error: string }> {
   if (input.choices.length < 2) {
     return { ok: false, error: "Need at least two choices to judge." };
@@ -58,12 +61,16 @@ export async function decideAction(input: {
 
   try {
     const ruling = await judge({ ...input, city });
-    const witty = await write(input.rawText, ruling);
+    const witty = await write(input.rawText, ruling, input.mode);
 
     return {
       ok: true,
       data: {
         winner: ruling.winner,
+        outcomeType: ruling.outcomeType,
+        tiedChoices: ruling.tiedChoices,
+        mode: input.mode,
+        wildcardAllowed: input.wildcardAllowed,
         witty,
         scores: ruling.scores,
         contextUsed: ruling.contextUsed,
@@ -77,7 +84,13 @@ export async function decideAction(input: {
   }
 }
 
-export async function instantDecideAction(rawText: string): Promise<
+export async function instantDecideAction(
+  rawText: string,
+  input?: {
+    modelChoice?: ModelChoice;
+    wildcardAllowed?: boolean;
+  }
+): Promise<
   | { ok: true; data: Verdict }
   | { ok: false; error: string }
 > {
@@ -97,7 +110,12 @@ export async function instantDecideAction(rawText: string): Promise<
 
   try {
     // runMonobrain returns an object perfectly shaped like Verdict
-    const data = await runMonobrain({ rawText: trimmed, city });
+    const data = await runMonobrain({
+      rawText: trimmed,
+      city,
+      modelChoice: input?.modelChoice ?? "balanced",
+      wildcardAllowed: input?.wildcardAllowed ?? false,
+    });
     return { ok: true, data };
   } catch (e) {
     console.error("monobrain failed:", e);

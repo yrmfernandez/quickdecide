@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { SLIDER_IDS } from "./sliders";
 
+export const DECISION_MODES = ["serious", "funny", "instant"] as const;
+export const MODEL_CHOICES = ["balanced", "fast", "strong"] as const;
+
+export type DecisionMode = (typeof DECISION_MODES)[number];
+export type ModelChoice = (typeof MODEL_CHOICES)[number];
+
 function truncateText(value: string, max: number): string {
   if (value.length <= max) return value;
   const clipped = value.slice(0, max + 1);
@@ -34,7 +40,12 @@ export type ClassifierResult = z.infer<typeof ClassifierSchema>;
 
 /** Brain 2 output: the dry, mathematical ruling. */
 export const JudgeSchema = z.object({
-  winner: z.string().describe("The single winning choice, verbatim from the list."),
+  winner: z.string().describe("The winning choice, tie label, or wildcard suggestion."),
+  outcomeType: z
+    .enum(["winner", "tie", "wildcard"])
+    .default("winner")
+    .describe("winner = one provided option wins, tie = provided options are effectively equal, wildcard = a better outside suggestion."),
+  tiedChoices: z.array(z.string()).default([]).describe("Only filled when outcomeType is tie."),
   scores: z
     .array(
       z.object({
@@ -59,6 +70,10 @@ export type JudgeResult = z.infer<typeof JudgeSchema>;
 /** Full verdict returned to the client. */
 export interface Verdict {
   winner: string;
+  outcomeType: "winner" | "tie" | "wildcard";
+  tiedChoices: string[];
+  mode: DecisionMode;
+  wildcardAllowed: boolean;
   witty: string;
   scores: JudgeResult["scores"];
   contextUsed: string[];

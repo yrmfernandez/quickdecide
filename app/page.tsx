@@ -10,12 +10,12 @@ export default function Home() {
           </div>
           <div className="navlinks">
             <a href="#problem">The Problem</a>
-            <a href="#how">How It Works</a>
+            <a href="#how">Modes</a>
             <a href="#app">Try It</a>
             <a href="#why">Why It Wins</a>
           </div>
           <a className="nav-cta" href="#app">
-            Open App →
+            Open App -&gt;
           </a>
         </div>
       </nav>
@@ -23,23 +23,23 @@ export default function Home() {
       <header className="hero">
         <div className="land-wrap hero-grid">
           <div>
-            <div className="eyebrow">Decision engine · Zero setup</div>
+            <div className="eyebrow">Decision engine - zero setup</div>
             <h1 className="hero-title">
               Stuck between options?
               <br />
-              <em>Get a verdict</em> in one line.
+              <em>Pick a mode</em> and get a verdict.
             </h1>
             <p className="lede">
-              Type your mess of options exactly as you&apos;d say them out loud.
-              QuickDecide parses it, weighs it against your real constraints, and
-              hands you a decision — not another form to fill out.
+              Type your mess of options exactly as you would say them out loud.
+              QuickDecide can stay serious, get funny, or decide instantly when
+              the debate has already stolen enough oxygen.
             </p>
             <div className="cta-row">
               <a className="btn-hero" href="#app">
-                Make a decision →
+                Make a decision -&gt;
               </a>
               <a className="btn-ghost-link" href="#how">
-                See how it scores things
+                See the modes
               </a>
             </div>
           </div>
@@ -48,7 +48,7 @@ export default function Home() {
             <div className="hstamp">DECIDED</div>
             <div className="receipt-head">
               <div className="rname">QUICKDECIDE</div>
-              <div className="rsub">DINNER · TONIGHT · 7:42 PM</div>
+              <div className="rsub">FUNNY MODE - TONIGHT - 7:42 PM</div>
             </div>
             <hr />
             <div className="rline strike">
@@ -67,14 +67,14 @@ export default function Home() {
             </div>
             <hr />
             <div className="rline">
-              <span>Budget Pressure</span>
-              <span>22/100</span>
+              <span>Mode</span>
+              <span>Funny</span>
             </div>
             <div className="rline">
-              <span>Time Commitment</span>
-              <span>18/100</span>
+              <span>Wildcard</span>
+              <span>Off</span>
             </div>
-            <div className="rfoot">— because your fridge already has the salsa —</div>
+            <div className="rfoot">because your fridge already has the salsa</div>
           </div>
         </div>
       </header>
@@ -85,19 +85,19 @@ export default function Home() {
           <h2 className="land-h2">Every small choice taxes the same battery.</h2>
           <p className="section-lede">
             By the time a real decision matters, the mental budget for it is
-            already spent on the twenty that didn&apos;t.
+            already spent on the twenty that did not.
           </p>
           <div className="problem-grid">
             <div className="clutter" aria-hidden="true">
               <div className="sticky-note s1">tacos???</div>
               <div className="sticky-note s2">or just... pasta again</div>
               <div className="sticky-note s3">no time to cook tbh</div>
-              <div className="sticky-note s4">₱500 left this week</div>
+              <div className="sticky-note s4">P500 left this week</div>
             </div>
             <div className="problem-copy">
               <p>
-                Conventional tools respond to fatigue with more structure —
-                onboarding flows, dropdowns, saved preferences. That&apos;s
+                Conventional tools respond to fatigue with more structure:
+                onboarding flows, dropdowns, saved preferences. That is
                 friction dressed up as features.
               </p>
               <p>
@@ -117,44 +117,42 @@ export default function Home() {
 
       <section className="land" id="how" style={{ background: "var(--paper-dim)" }}>
         <div className="land-wrap">
-          <div className="section-tag">How It Works</div>
-          <h2 className="land-h2">Four steps, itemized like a receipt.</h2>
+          <div className="section-tag">Modes</div>
+          <h2 className="land-h2">Three moods, one receipt.</h2>
           <p className="section-lede">
-            Nothing here needs your attention until the total prints.
+            Pick the flavor of judgment first. The app handles the rest.
           </p>
           <div className="itemized">
             <div className="item-row">
               <div className="item-no">01</div>
-              <div className="item-title">Messy input</div>
+              <div className="item-title">Serious mode</div>
               <div className="item-desc">
-                Type the options exactly as they came to you — no fields, no
-                format, just the sentence.
+                Default mode. It extracts options, adds relevant sliders, uses
+                tools when useful, and keeps the tone grounded.
               </div>
             </div>
             <div className="item-row">
               <div className="item-no">02</div>
-              <div className="item-title">AI extraction</div>
+              <div className="item-title">Funny mode</div>
               <div className="item-desc">
-                A lightweight model reads the noise, pulls out your actual
-                options, and picks the two constraint dials that matter for this
-                decision.
+                Same careful scoring, but the receipt can talk back a little
+                when the decision is low-stakes enough for jokes.
               </div>
             </div>
             <div className="item-row">
               <div className="item-no">03</div>
-              <div className="item-title">The judge</div>
+              <div className="item-title">Instant mode</div>
               <div className="item-desc">
-                A larger model weighs every option against your dial settings —
-                checking real-world context like weather and time of day before
-                scoring.
+                Skips sliders and runs the whole call in one pass for the
+                moments where speed matters more than tuning.
               </div>
             </div>
             <div className="item-row">
               <div className="item-no">04</div>
-              <div className="item-title">Final winner</div>
+              <div className="item-title">Wildcard option</div>
               <div className="item-desc">
-                One option, one plain-language reason why — printed like a
-                receipt, not buried in a dashboard.
+                Optional chaos switch. If the listed choices are all bad, the
+                app may print a better outside answer instead.
               </div>
             </div>
           </div>
@@ -164,9 +162,10 @@ export default function Home() {
       <section className="land" id="app">
         <div className="land-wrap">
           <div className="section-tag">Try It</div>
-          <h2 className="land-h2">Type the mess. Get the answer.</h2>
+          <h2 className="land-h2">Type the mess. Choose the brain.</h2>
           <p className="section-lede">
-            Single screen. One input, two constraint dials, one printed verdict.
+            Serious is the default. Funny adds flavor. Instant goes straight to
+            the receipt.
           </p>
           <DecisionFlow />
         </div>
@@ -182,23 +181,23 @@ export default function Home() {
               <h3>Zero friction</h3>
               <p>
                 One messy sentence in. No dropdowns, no templates, no
-                &quot;select all that apply.&quot;
+                "select all that apply."
               </p>
             </div>
             <div className="feat">
-              <div className="feat-index">02 / Speed</div>
-              <h3>Saves time</h3>
+              <div className="feat-index">02 / Modes</div>
+              <h3>Matches the moment</h3>
               <p>
-                Ends domestic and professional decision deadlocks in seconds,
-                not another group chat thread.
+                Serious for real tradeoffs, funny for low-stakes chaos, instant
+                when you just need the answer now.
               </p>
             </div>
             <div className="feat">
               <div className="feat-index">03 / Logic</div>
-              <h3>Context aware</h3>
+              <h3>Guardrailed</h3>
               <p>
-                Weighs choices against your actual constraints and real-world
-                conditions — not a coin flip dressed up as a feature.
+                Handles ties, caps long reasoning, and separates verified
+                context from plain judgment.
               </p>
             </div>
           </div>
@@ -213,7 +212,7 @@ export default function Home() {
               Built to end debates in seconds. Type the mess. Get the answer.
             </p>
             <a className="btn-hero" href="#app">
-              Launch QuickDecide →
+              Launch QuickDecide -&gt;
             </a>
           </div>
         </div>
@@ -221,7 +220,7 @@ export default function Home() {
 
       <footer className="landing">
         <div className="land-wrap foot-row">
-          <div className="foot-copy">© 2026 QuickDecide</div>
+          <div className="foot-copy">(c) 2026 QuickDecide</div>
           <div className="foot-links">
             <a href="#app">quickdecide.app</a>
             <a href="#app">build@quickdecide.app</a>

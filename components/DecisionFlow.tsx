@@ -2,16 +2,35 @@
 
 import { useRef, useState, useTransition } from "react";
 import { analyzeAction, decideAction, instantDecideAction } from "@/app/actions";
-import type { Verdict, ClassifierResult } from "@/lib/schemas";
+import type { ClassifierResult, DecisionMode, ModelChoice, Verdict } from "@/lib/schemas";
 
 type Stage = "dump" | "analyzing" | "sliders" | "deciding" | "verdict";
 
-const ANALYZE_STATUS = ["Reading your chaos", "Extracting the options", "Picking your dials"];
-const DECIDE_STATUS = ["Checking the real world", "Weighing the options", "Printing the receipt"];
+const ANALYZE_STATUS = ["Reading the prompt", "Extracting the options", "Choosing useful dials"];
+const DECIDE_STATUS = ["Checking context", "Weighing tradeoffs", "Printing the receipt"];
+
+const MODE_LABELS: Record<DecisionMode, string> = {
+  serious: "Serious",
+  funny: "Funny",
+  instant: "Instant",
+};
+
+const MODEL_LABELS: Record<ModelChoice, string> = {
+  balanced: "Balanced",
+  fast: "Fast",
+  strong: "Strong",
+};
+
+function clip(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1).trim()}...`;
+}
 
 export default function DecisionFlow() {
   const [stage, setStage] = useState<Stage>("dump");
-  const [mode, setMode] = useState<"instant" | "deep">("instant");
+  const [mode, setMode] = useState<DecisionMode>("serious");
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("balanced");
+  const [wildcardAllowed, setWildcardAllowed] = useState(false);
   const [rawText, setRawText] = useState("");
   const [choices, setChoices] = useState<string[]>([]);
   const [sliders, setSliders] = useState<ClassifierResult["sliders"]>([]);
@@ -24,20 +43,40 @@ export default function DecisionFlow() {
   const [statusIdx, setStatusIdx] = useState(0);
   const [, startTransition] = useTransition();
   const statusTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
-  // ---- Status cycling helpers ----
   function cycleStatus(len: number) {
     setStatusIdx(0);
     if (statusTimer.current) clearInterval(statusTimer.current);
     statusTimer.current = setInterval(() => setStatusIdx((i) => (i + 1) % len), 1400);
   }
+
   function stopStatus() {
     if (statusTimer.current) clearInterval(statusTimer.current);
   }
 
-  // ---- Path A: 3‑Brain Pipeline (Deep) ----
+  function scrollHome() {
+    window.setTimeout(() => {
+      shellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function stampNow() {
+    return new Date()
+      .toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: "Asia/Manila",
+      })
+      .toUpperCase();
+  }
+
   async function analyze() {
     setError(null);
+    setVerdict(null);
     setStage("analyzing");
     cycleStatus(ANALYZE_STATUS.length);
     startTransition(async () => {
@@ -49,14 +88,13 @@ export default function DecisionFlow() {
         return;
       }
       setChoices(res.data.choices);
-      setSliders(res.data.sliders);                         // object array
-      // Build initial values (each slider at 50)
+      setSliders(res.data.sliders);
       setValues(Object.fromEntries(res.data.sliders.map((s) => [s.id, 50])));
       setStage("sliders");
+      scrollHome();
     });
   }
 
-  // ---- Decide after sliders (Deep) ----
   async function decide() {
     setError(null);
     setStage("deciding");
@@ -66,6 +104,9 @@ export default function DecisionFlow() {
       const res = await decideAction({
         rawText,
         choices,
+        mode: mode === "instant" ? "serious" : mode,
+        modelChoice,
+        wildcardAllowed,
         sliders: sliders.map((s) => ({
           id: s.id,
           value: values[s.id] ?? 50,
@@ -81,28 +122,21 @@ export default function DecisionFlow() {
         return;
       }
       setElapsed(((performance.now() - t0) / 1000).toFixed(1));
-      setDecidedAt(
-        new Date()
-          .toLocaleString("en-US", {
-            weekday: "short",
-            hour: "numeric",
-            minute: "2-digit",
-          })
-          .toUpperCase()
-      );
+      setDecidedAt(stampNow());
       setVerdict(res.data);
       setStage("verdict");
+      scrollHome();
     });
   }
 
-  // ---- Path B: 1‑Brain Monolith (Instant) ----
   async function instantDecide() {
     setError(null);
+    setVerdict(null);
     setStage("deciding");
     cycleStatus(DECIDE_STATUS.length);
     const t0 = performance.now();
     startTransition(async () => {
-      const res = await instantDecideAction(rawText);
+      const res = await instantDecideAction(rawText, { modelChoice, wildcardAllowed });
       stopStatus();
       if (!res.ok) {
         setError(res.error);
@@ -110,23 +144,15 @@ export default function DecisionFlow() {
         return;
       }
       setChoices(res.data.scores.map((s) => s.choice));
-      setSliders([]);          // no sliders in instant mode
+      setSliders([]);
       setElapsed(((performance.now() - t0) / 1000).toFixed(1));
-      setDecidedAt(
-        new Date()
-          .toLocaleString("en-US", {
-            weekday: "short",
-            hour: "numeric",
-            minute: "2-digit",
-          })
-          .toUpperCase()
-      );
+      setDecidedAt(stampNow());
       setVerdict(res.data);
       setStage("verdict");
+      scrollHome();
     });
   }
 
-  // ---- Reset ----
   function reset(keepText = false) {
     setStage("dump");
     if (!keepText) setRawText("");
@@ -136,13 +162,16 @@ export default function DecisionFlow() {
     setVerdict(null);
     setCopied(false);
     setError(null);
+    stopStatus();
+    scrollHome();
   }
 
-  // ---- Copy result ----
   async function copyResult() {
     if (!verdict) return;
     const lines = [
-      `QUICKDECIDE VERDICT: ${verdict.winner}`,
+      `QUICKDECIDE MODE: ${MODE_LABELS[verdict.mode]}`,
+      `OUTCOME: ${verdict.outcomeType.toUpperCase()}`,
+      `VERDICT: ${verdict.winner}`,
       verdict.witty,
       "",
       ...verdict.scores.map((s) => `${s.choice}: ${Math.round(s.score)} pts`),
@@ -152,114 +181,105 @@ export default function DecisionFlow() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* clipboard unavailable — ignore */
+      // Clipboard unavailable.
     }
   }
 
-  // ---- Derived data for verdict display ----
-  const sortedScores = verdict
-    ? [...verdict.scores].sort((a, b) => b.score - a.score)
-    : [];
+  const sortedScores = verdict ? [...verdict.scores].sort((a, b) => b.score - a.score) : [];
   const maxScore = Math.max(...sortedScores.map((s) => s.score), 1);
-  const losers = sortedScores.filter((s) => s.choice !== verdict?.winner);
-  const winScore = sortedScores.find((s) => s.choice === verdict?.winner);
+  const tied = new Set(verdict?.tiedChoices ?? []);
+  const winnerScore = sortedScores.find((s) => s.choice === verdict?.winner);
+  const losers = sortedScores.filter((s) => {
+    if (!verdict) return false;
+    if (verdict.outcomeType === "tie") return !tied.has(s.choice);
+    if (verdict.outcomeType === "wildcard") return true;
+    return s.choice !== verdict.winner;
+  });
+  const showInput = (stage === "dump" || stage === "analyzing" || stage === "deciding") && !verdict;
+  const isBusy = stage === "analyzing" || stage === "deciding";
 
-  // ---- Render ----
   return (
-    <div className="app-shell">
-      {/* ---------- App bar ---------- */}
+    <div className="app-shell" ref={shellRef}>
       <div className="app-bar">
         <div className="dot" />
         <div className="dot" />
         <div className="dot" />
         <div className="url">quickdecide.app</div>
-        {stage === "verdict" && <div className="hint">Enter to redecide</div>}
+        {stage === "verdict" && <div className="hint">Receipt ready</div>}
       </div>
 
-      {/* ---------- Body ---------- */}
       <div className="app-body">
-        {/* ===== Dump / Analyzing / Deciding (Instant) ===== */}
-        {(stage === "dump" || stage === "analyzing" || (stage === "deciding" && mode === "instant")) && !verdict && (
+        {showInput && (
           <section>
             <p className="field-label">What are you deciding between?</p>
             <textarea
               className="dump"
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              placeholder={'"We\'re stuck between getting tacos, cooking some dry pasta, or ordering a quick pepperoni pizza."'}
-              disabled={stage === "analyzing" || stage === "deciding"}
+              placeholder={'"We are stuck between tacos, cooking pasta, or ordering pepperoni pizza."'}
+              disabled={isBusy}
               aria-label="Describe what you are deciding between"
             />
 
-            {/* Segmented switch */}
-            <div
-              style={{
-                display: "inline-flex",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: "4px",
-                padding: "4px",
-                marginBottom: "1.25rem",
-                gap: "4px",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setMode("instant")}
-                disabled={stage === "analyzing" || stage === "deciding"}
-                style={{
-                  padding: "6px 12px",
-                  background: mode === "instant" ? "rgb(237, 230, 211)" : "transparent",
-                  color: mode === "instant" ? "#1a1a1a" : "rgba(237, 230, 211, 0.4)",
-                  border: "none",
-                  borderRadius: "2px",
-                  cursor: (stage === "analyzing" || stage === "deciding") ? "not-allowed" : "pointer",
-                  fontSize: "0.75rem",
-                  fontFamily: "inherit",
-                  fontWeight: mode === "instant" ? "bold" : "normal",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Instant
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("deep")}
-                disabled={stage === "analyzing" || stage === "deciding"}
-                style={{
-                  padding: "6px 12px",
-                  background: mode === "deep" ? "rgb(237, 230, 211)" : "transparent",
-                  color: mode === "deep" ? "#1a1a1a" : "rgba(237, 230, 211, 0.4)",
-                  border: "none",
-                  borderRadius: "2px",
-                  cursor: (stage === "analyzing" || stage === "deciding") ? "not-allowed" : "pointer",
-                  fontSize: "0.75rem",
-                  fontFamily: "inherit",
-                  fontWeight: mode === "deep" ? "bold" : "normal",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Fun Deep Analysis
-              </button>
+            <div className="control-grid">
+              <div>
+                <p className="control-label">Mode</p>
+                <div className="segmented">
+                  {(["serious", "funny", "instant"] as DecisionMode[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setMode(option)}
+                      disabled={isBusy}
+                      className={mode === option ? "active" : ""}
+                    >
+                      {MODE_LABELS[option]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="control-label">Model</p>
+                <select
+                  className="select"
+                  value={modelChoice}
+                  onChange={(event) => setModelChoice(event.target.value as ModelChoice)}
+                  disabled={isBusy}
+                  aria-label="Model choice"
+                >
+                  {(["balanced", "fast", "strong"] as ModelChoice[]).map((option) => (
+                    <option key={option} value={option}>
+                      {MODEL_LABELS[option]}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={wildcardAllowed}
+                onChange={(event) => setWildcardAllowed(event.target.checked)}
+                disabled={isBusy}
+              />
+              <span>Allow wildcard result</span>
+            </label>
 
             <button
               className="decide-btn"
               onClick={mode === "instant" ? instantDecide : analyze}
-              disabled={stage === "analyzing" || stage === "deciding" || rawText.trim().length < 8}
+              disabled={isBusy || rawText.trim().length < 8}
             >
-              {mode === "instant" ? "Decide instantly →" : "Analyze →"}
+              {mode === "instant" ? "Decide instantly ->" : "Analyze options ->"}
             </button>
 
-            {(stage === "analyzing" || stage === "deciding") && (
+            {isBusy && (
               <div className="loading" role="status" style={{ marginTop: 14 }}>
                 <div className="bar" />
                 <p className="status">
-                  {(stage === "analyzing" ? ANALYZE_STATUS : DECIDE_STATUS)[statusIdx]}…
+                  {(stage === "analyzing" ? ANALYZE_STATUS : DECIDE_STATUS)[statusIdx]}...
                 </p>
               </div>
             )}
@@ -267,153 +287,190 @@ export default function DecisionFlow() {
           </section>
         )}
 
-        {/* ===== Sliders / Deciding (Deep) ===== */}
-        {(stage === "sliders" || (stage === "deciding" && mode === "deep")) && (
+        {(stage === "sliders" || (stage === "deciding" && mode !== "instant")) && (
           <section>
             <p className="field-label">Detected options</p>
             <div className="choices">
-              {choices.map((c) => (
-                <span key={c} className="chip">
-                  {c}
+              {choices.map((choice) => (
+                <span key={choice} className="chip">
+                  {choice}
                 </span>
               ))}
             </div>
 
-            {/* Render sliders dynamically from the sliders array */}
-            {sliders.map((s) => {
-              const v = values[s.id] ?? 50;
+            {sliders.map((slider) => {
+              const value = values[slider.id] ?? 50;
               return (
-                <div key={s.id} className="slider-block">
+                <div key={slider.id} className="slider-block">
                   <div className="slider-head">
-                    <span className="slider-name">{s.label}</span>
-                    <span className="slider-value">{v}/100</span>
+                    <span className="slider-name">{slider.label}</span>
+                    <span className="slider-value">{value}/100</span>
                   </div>
                   <input
                     type="range"
                     min={0}
                     max={100}
-                    value={v}
-                    style={{ ["--fill" as string]: `${v}%` }}
-                    onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [s.id]: Number(e.target.value) }))
+                    value={value}
+                    style={{ ["--fill" as string]: `${value}%` }}
+                    onChange={(event) =>
+                      setValues((prev) => ({ ...prev, [slider.id]: Number(event.target.value) }))
                     }
                     disabled={stage === "deciding"}
-                    aria-label={s.label}
+                    aria-label={slider.label}
                   />
                   <div className="slider-ends">
-                    <span>{s.low}</span>
-                    <span>{s.high}</span>
+                    <span>{slider.low}</span>
+                    <span>{slider.high}</span>
                   </div>
                 </div>
               );
             })}
 
             <button className="decide-btn" onClick={decide} disabled={stage === "deciding"}>
-              Decide for me →
+              Decide for me -&gt;
             </button>
             <div className="actions" style={{ marginTop: 14 }}>
               <button className="btn" onClick={() => reset(false)} disabled={stage === "deciding"}>
-                ↺ Start over
+                Start over
               </button>
             </div>
 
             {stage === "deciding" && (
               <div className="loading" role="status">
                 <div className="bar" />
-                <p className="status">{DECIDE_STATUS[statusIdx]}…</p>
+                <p className="status">{DECIDE_STATUS[statusIdx]}...</p>
               </div>
             )}
             {error && <p className="error">{error}</p>}
           </section>
         )}
 
-        {/* ===== Verdict ===== */}
         {stage === "verdict" && verdict && (
           <section className="stage">
             <div className="stage-label">Decision printed in {elapsed}s</div>
 
             <div className="receipt-wrap">
-              <div className="stamp-mark">DECIDED</div>
+              <div className="stamp-mark">
+                {verdict.outcomeType === "tie"
+                  ? "TIE"
+                  : verdict.outcomeType === "wildcard"
+                    ? "WILDCARD"
+                    : "DECIDED"}
+              </div>
               <div className="receipt">
                 <div className="r-head">
                   <div className="rname">QUICKDECIDE</div>
                   <div className="rsub">{decidedAt}</div>
                 </div>
                 <hr />
-                <div className="r-input">&quot;{rawText.trim()}&quot;</div>
+                <div className="r-meta">
+                  <span>Mode</span>
+                  <span>
+                    {MODE_LABELS[verdict.mode]} {verdict.wildcardAllowed ? "+ wildcard" : ""}
+                  </span>
+                </div>
+                <div className="r-meta">
+                  <span>Model</span>
+                  <span>{MODEL_LABELS[modelChoice]}</span>
+                </div>
                 <hr />
-                {losers.map((s) => (
-                  <div className="rline strike" key={s.choice}>
-                    <span>{s.choice}</span>
-                    <span className="score">{Math.round(s.score)} pts</span>
-                  </div>
-                ))}
-                {winScore && (
-                  <div className="rline win">
-                    <span>{winScore.choice}</span>
-                    <span className="score">{Math.round(winScore.score)} pts ✓</span>
-                  </div>
-                )}
-                <hr />
-                <div className="r-why">{verdict.witty}</div>
+                <div className="r-input">&quot;{clip(rawText.trim(), 220)}&quot;</div>
                 <hr />
 
-                {/* Slider summary (only if sliders exist) */}
-                {sliders.length > 0 &&
-                  sliders.map((s) => (
-                    <div className="r-meta" key={s.id}>
-                      <span>{s.label}</span>
-                      <span>{values[s.id] ?? 50}/100</span>
-                    </div>
-                  ))}
+                {losers.map((score) => (
+                  <div className="rline strike" key={score.choice}>
+                    <span>{score.choice}</span>
+                    <span className="score">{Math.round(score.score)} pts</span>
+                  </div>
+                ))}
+
+                {verdict.outcomeType === "tie" &&
+                  verdict.tiedChoices.map((choice) => {
+                    const score = sortedScores.find((item) => item.choice === choice);
+                    return (
+                      <div className="rline tie" key={choice}>
+                        <span>{choice}</span>
+                        <span className="score">{Math.round(score?.score ?? 0)} pts =</span>
+                      </div>
+                    );
+                  })}
+
+                {verdict.outcomeType === "wildcard" && (
+                  <div className="rline win">
+                    <span>{verdict.winner}</span>
+                    <span className="score">wildcard</span>
+                  </div>
+                )}
+
+                {verdict.outcomeType === "winner" && winnerScore && (
+                  <div className="rline win">
+                    <span>{winnerScore.choice}</span>
+                    <span className="score">{Math.round(winnerScore.score)} pts OK</span>
+                  </div>
+                )}
+
+                <hr />
+                <div className="r-why">{clip(verdict.witty, 180)}</div>
+                <hr />
+
+                {sliders.map((slider) => (
+                  <div className="r-meta" key={slider.id}>
+                    <span>{clip(slider.label, 24)}</span>
+                    <span>{values[slider.id] ?? 50}/100</span>
+                  </div>
+                ))}
 
                 <div className="r-meta">
                   <span>Options weighed</span>
                   <span>{verdict.scores.length}</span>
                 </div>
                 {verdict.contextUsed.map((context, index) => (
-                  <div className="r-meta" key={`context-${index}`}>
+                  <div className="r-meta wrap" key={`context-${index}`}>
                     <span>{index === 0 ? "Context" : ""}</span>
-                    <span style={{ textAlign: "right", maxWidth: "60%" }}>{context}</span>
+                    <span>{clip(context, 120)}</span>
                   </div>
                 ))}
                 {verdict.reasoningUsed.map((reason, index) => (
-                  <div className="r-meta" key={`reason-${index}`}>
+                  <div className="r-meta wrap" key={`reason-${index}`}>
                     <span>{index === 0 ? "Reasoning" : ""}</span>
-                    <span style={{ textAlign: "right", maxWidth: "60%" }}>{reason}</span>
+                    <span>{clip(reason, 120)}</span>
                   </div>
                 ))}
                 <div className="barcode" />
-                <div className="r-foot">NO REFUNDS · NO SECOND-GUESSING</div>
+                <div className="r-foot">NO REFUNDS - NO SECOND-GUESSING</div>
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="actions">
               <button className="btn" onClick={() => reset(false)}>
-                ↺ Start over
+                Start over
               </button>
               <button className="btn" onClick={() => reset(true)}>
-                ↻ Decide again
+                Decide again
               </button>
               <button className="btn" onClick={copyResult}>
-                ⧉ {copied ? "Copied!" : "Copy result"}
+                {copied ? "Copied!" : "Copy result"}
               </button>
             </div>
 
-            {/* Score breakdown */}
             <div className="scoreboard">
               <div className="scoreboard-label">Score breakdown</div>
-              {sortedScores.map((s) => (
-                <div className="bar-row" key={s.choice}>
-                  <div className="name">{s.choice}</div>
+              {sortedScores.map((score) => (
+                <div className="bar-row" key={score.choice}>
+                  <div className="name">{score.choice}</div>
                   <div className="bar-track">
                     <div
-                      className={`bar-fill ${s.choice === verdict.winner ? "win" : "lose"}`}
-                      style={{ width: `${(s.score / maxScore) * 100}%` }}
+                      className={`bar-fill ${
+                        verdict.outcomeType === "tie" && tied.has(score.choice)
+                          ? "tie"
+                          : score.choice === verdict.winner
+                            ? "win"
+                            : "lose"
+                      }`}
+                      style={{ width: `${(score.score / maxScore) * 100}%` }}
                     />
                   </div>
-                  <div className="val">{Math.round(s.score)}</div>
+                  <div className="val">{Math.round(score.score)}</div>
                 </div>
               ))}
             </div>

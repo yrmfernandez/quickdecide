@@ -30,10 +30,38 @@ function formatTime(output: unknown): string | null {
   const dayOfWeek = typeof output.dayOfWeek === "string" ? output.dayOfWeek : null;
   const partOfDay = typeof output.partOfDay === "string" ? output.partOfDay : null;
   const hour = typeof output.hour === "number" ? `${output.hour}:00` : null;
+  const timeZone = typeof output.timeZone === "string" ? output.timeZone : null;
 
-  const parts = [dayOfWeek, partOfDay, hour].filter(Boolean);
+  const parts = [dayOfWeek, partOfDay, hour, timeZone].filter(Boolean);
   if (parts.length === 0) return null;
   return `Current time context: ${parts.join(", ")}.`;
+}
+
+function formatDate(output: unknown): string | null {
+  if (!isRecord(output)) return null;
+
+  const date = typeof output.date === "string" ? output.date : null;
+  const dayOfWeek = typeof output.dayOfWeek === "string" ? output.dayOfWeek : null;
+  const timeZone = typeof output.timeZone === "string" ? output.timeZone : null;
+
+  const parts = [date, dayOfWeek, timeZone].filter(Boolean);
+  if (parts.length === 0) return null;
+  return `Current date context: ${parts.join(", ")}.`;
+}
+
+function formatCost(output: unknown): string | null {
+  if (!Array.isArray(output)) return null;
+  const parts = output
+    .filter(isRecord)
+    .map((item) => {
+      const choice = typeof item.choice === "string" ? item.choice : null;
+      const broadCost = typeof item.broadCost === "string" ? item.broadCost : null;
+      return choice && broadCost ? `${choice}: ${broadCost}` : null;
+    })
+    .filter(Boolean);
+
+  if (parts.length === 0) return null;
+  return `Broad cost context: ${parts.join("; ")}.`;
 }
 
 export function formatActualToolContext(results: ToolResultLike[]): string[] {
@@ -41,6 +69,8 @@ export function formatActualToolContext(results: ToolResultLike[]): string[] {
     .map((result) => {
       if (result.toolName === "getWeather") return formatWeather(result.output);
       if (result.toolName === "getTimeContext") return formatTime(result.output);
+      if (result.toolName === "getDateContext") return formatDate(result.output);
+      if (result.toolName === "compareSimpleCosts") return formatCost(result.output);
       return null;
     })
     .filter((item): item is string => Boolean(item));

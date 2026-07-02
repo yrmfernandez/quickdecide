@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "QuickDecide — stop deliberating",
+  title: "QuickDecide - stop deliberating",
   description:
-    "A stateless, zero-friction AI decision engine. Dump your options, set two sliders, get a verdict.",
+    "A stateless, zero-friction AI decision engine. Dump your options, choose a mode, get a verdict.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

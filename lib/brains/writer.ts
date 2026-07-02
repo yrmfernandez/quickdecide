@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { groq } from "@ai-sdk/groq";
-import type { JudgeResult } from "../schemas";
+import type { DecisionMode, JudgeResult } from "../schemas";
 
 const WRITER_MODELS = [
   "openai/gpt-oss-20b",
@@ -20,7 +20,8 @@ function cleanSentence(text: string): string {
  */
 export async function write(
   rawText: string,
-  ruling: JudgeResult
+  ruling: JudgeResult,
+  mode: Exclude<DecisionMode, "instant">
 ): Promise<string> {
   const sortedScores = [...ruling.scores].sort(
     (a, b) => b.score - a.score
@@ -53,7 +54,7 @@ export async function write(
 You are Brain 3 of QuickDecide.
 
 You are a consistent PERSONA:
-a slightly sarcastic, emotionally aware best friend.
+${mode === "funny" ? "a slightly sarcastic, emotionally aware best friend." : "a calm, direct decision narrator."}
 
 You are NOT a judge.
 You are NOT a reasoner.
@@ -101,10 +102,18 @@ Allowed tone:
 You are still human — just not funny.
 
 ==================================================
-CASUAL MODE
+SELECTED MODE
 ==================================================
 
-If NOT serious:
+Selected mode: ${mode}
+
+If selected mode is serious:
+- be concise
+- no roasts
+- no chaotic wording
+- sound practical and grounded
+
+If selected mode is funny AND NOT serious:
 - light sarcasm allowed
 - playful commentary allowed
 - mild chaos humor allowed
@@ -153,9 +162,9 @@ ONE sentence only.
 Structure:
 - reaction
 - side comment (ONLY if safe)
-- final winner
+- final outcome
 
-MAX 30 words
+MAX 24 words
 `;
 
   const prompt = `
@@ -164,6 +173,12 @@ ${rawText}
 
 Winner:
 ${ruling.winner}
+
+Outcome type:
+${ruling.outcomeType}
+
+Tied choices:
+${ruling.tiedChoices.join("; ") || "none"}
 
 Confidence margin:
 ${margin}
