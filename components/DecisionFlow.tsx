@@ -120,15 +120,7 @@ export default function DecisionFlow() {
   const winScore = sortedScores.find((s) => s.choice === verdict?.winner);
 
   return (
-    <main className="wrap">
-      <header className="topbar">
-        <div className="logo">
-          <span className="logo-mark">Q</span>QuickDecide
-        </div>
-        <span className="tag">Decision engine · Zero setup</span>
-      </header>
-
-      <div className="app-shell">
+    <div className="app-shell">
         <div className="app-bar">
           <div className="dot" />
           <div className="dot" />
@@ -304,7 +296,6 @@ export default function DecisionFlow() {
             </section>
           )}
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
