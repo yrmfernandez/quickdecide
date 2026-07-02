@@ -3,6 +3,7 @@ import { groq } from "@ai-sdk/groq";
 import { z } from "zod";
 import { getWeather, getTimeContext } from "../tools";
 import { generateObjectSafe } from "../ai-utils";
+import { formatActualToolContext } from "../tool-context";
 
 export interface MonobrainInput {
   rawText: string;
@@ -23,16 +24,31 @@ const MonolithSchema = z.object({
     .describe("Score per choice out of 100 with a terse justification note."),
   contextUsed: z
     .array(z.string())
+    .default([])
     .describe("Only external real-world facts used, e.g. weather or time of day."),
   reasoningUsed: z
     .array(z.string().transform((reason) => reason.slice(0, 140)))
+    .default([])
     .describe("Internal decision reasons and tradeoffs."),
 });
 
 export type MonolithResult = z.infer<typeof MonolithSchema>;
 
+function normalizeReadableList(items: string[], maxItems = 4): string[] {
+  return items
+    .flatMap((item) =>
+      item
+        .replace(/^[\s•*-]+/, "")
+        .split(/(?<=[.!?])\s+/)
+        .map((part) => part.trim())
+    )
+    .filter((item) => item.length > 0)
+    .filter((item) => !/non[- ]?existent|fake tool|web search|search tool/i.test(item))
+    .slice(0, maxItems);
+}
+
 export async function runMonobrain(input: MonobrainInput): Promise<MonolithResult> {
-  const { text } = await generateText({
+  const result = await generateText({
     model: groq("openai/gpt-oss-120b"),
     tools: { getWeather, getTimeContext },
     stopWhen: stepCountIs(5),
@@ -51,9 +67,16 @@ Separate your evidence:
 - contextUsed: ONLY external facts from tools or objective timing/location facts. If none, say none.
 - reasoningUsed: internal tradeoffs and why the winner beat the alternatives.
 
+The ONLY available tools are getWeather and getTimeContext. Never mention or pretend to use any other tool.
+
 End your reply with a final summary containing: the extracted choices, the declared winner, the witty one-liner, a 0-100 score per choice with a brief note each, contextUsed, and reasoningUsed.`,
     prompt: `Original brain dump: "${input.rawText}"\n\nAnalyze, judge, and write the verdict.`,
   });
+
+  const text = result.text;
+  const actualContext = formatActualToolContext(
+    result.steps.flatMap((step) => step.toolResults)
+  );
 
   const object = await generateObjectSafe({
     model: groq("llama-3.1-8b-instant"),
@@ -68,5 +91,9 @@ Rules:
     shapeHint: `{"winner": "...", "witty": "...", "scores": [{"choice": "...", "score": 0-100, "note": "..."}], "contextUsed": ["..."], "reasoningUsed": ["..."]}`,
   });
 
-  return object;
+  return {
+    ...object,
+    contextUsed: actualContext,
+    reasoningUsed: normalizeReadableList(object.reasoningUsed ?? []),
+  };
 }

@@ -2,23 +2,207 @@ import { generateText } from "ai";
 import { groq } from "@ai-sdk/groq";
 import type { JudgeResult } from "../schemas";
 
-/**
- * Brain 3 - The Writer.
- *
- * Takes the dry mathematical ruling from Brain 2 and turns it into the
- * single witty, human-sounding sentence shown under the verdict.
- */
-export async function write(ruling: JudgeResult): Promise<string> {
-  const { text } = await generateText({
-    model: groq("llama-3.1-8b-instant"),
-    system: `You write ONE witty, confident sentence (max 22 words) announcing a decision verdict.
-Tone: playful best friend who is done with your indecision. No hashtags, no emoji, no quotes around the sentence.
-Ground the joke in the actual reasons. Mention the user's concrete dilemma when possible. Do not invent facts.`,
-    prompt: `Winner: ${ruling.winner}
-Scores & notes: ${JSON.stringify(ruling.scores)}
-Internal reasoning: ${ruling.reasoningUsed.join("; ") || "none"}
-Real-world context used: ${ruling.contextUsed.join("; ") || "none"}`,
-  });
+const WRITER_MODELS = [
+  "openai/gpt-oss-20b",
+  "llama-3.1-8b-instant",
+] as const;
 
-  return text.trim().replace(/^["']|["']$/g, "");
+function cleanSentence(text: string): string {
+  return (text.trim().split("\n")[0] ?? "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 240)
+    .trim();
+}
+
+/**
+ * Brain 3 — Persona Narrator (safe sarcasm + controlled humor)
+ */
+export async function write(
+  rawText: string,
+  ruling: JudgeResult
+): Promise<string> {
+  const sortedScores = [...ruling.scores].sort(
+    (a, b) => b.score - a.score
+  );
+
+  const margin =
+    sortedScores.length >= 2
+      ? sortedScores[0].score - sortedScores[1].score
+      : 100;
+
+  const choiceCount = ruling.scores.length;
+
+  // -----------------------------
+  // CONTEXT DETECTORS
+  // -----------------------------
+  const isWeird =
+    /eat water|drink rice|sleep outside|get weather|runaway train|lever|trolley/i.test(
+      rawText.toLowerCase()
+    );
+
+  const isSerious =
+    /fire|emergency|alarm|death|die|harm|risk|evacuate|runaway train|trolley|sacrifice/i.test(
+      rawText.toLowerCase()
+    );
+
+  const isManyChoices = choiceCount >= 4;
+  const isCrowded = choiceCount >= 6;
+
+  const system = `
+You are Brain 3 of QuickDecide.
+
+You are a consistent PERSONA:
+a slightly sarcastic, emotionally aware best friend.
+
+You are NOT a judge.
+You are NOT a reasoner.
+
+You are ONLY a narrator reacting to a finished decision.
+
+==================================================
+CORE IDENTITY
+==================================================
+
+You always sound human.
+
+You may:
+- add light side comments
+- react casually
+- use subtle sarcasm
+
+BUT you must ALWAYS respect context seriousness.
+
+==================================================
+SERIOUS MODE (SAFETY OVERRIDE)
+==================================================
+
+If the scenario involves:
+- fire
+- emergency
+- death
+- harm
+- evacuation
+- life-or-death decisions
+
+THEN:
+
+- NO jokes about the situation
+- NO sarcasm about danger
+- NO humorous framing of harm
+- tone becomes calm + grounded
+
+Allowed tone:
+- “according to analysis”
+- “recommended outcome”
+- calm friendly reassurance
+
+You are still human — just not funny.
+
+==================================================
+CASUAL MODE
+==================================================
+
+If NOT serious:
+- light sarcasm allowed
+- playful commentary allowed
+- mild chaos humor allowed
+
+==================================================
+WEIRDNESS MODE
+==================================================
+
+If input is weird AND NOT serious:
+- you may point out absurdity
+- keep it playful
+
+If serious:
+- do NOT comment on weirdness
+
+==================================================
+MULTI-CHOICE MODE
+==================================================
+
+If 4+ choices:
+- acknowledge complexity briefly
+- do NOT list or analyze options
+
+If 6+ choices:
+- stronger “this got crowded” comment allowed
+
+==================================================
+CONFIDENCE RULE
+==================================================
+
+High margin:
+- confident tone
+
+Medium:
+- casual agreement
+
+Low:
+- “that was close” tone
+
+==================================================
+OUTPUT RULE
+==================================================
+
+ONE sentence only.
+
+Structure:
+- reaction
+- optional side comment (ONLY if safe)
+- final winner
+
+MAX 30 words
+`;
+
+  const prompt = `
+User request:
+${rawText}
+
+Winner:
+${ruling.winner}
+
+Confidence margin:
+${margin}
+
+Choice count:
+${choiceCount}
+
+Weird input:
+${isWeird}
+
+Serious scenario:
+${isSerious}
+
+Scores:
+${JSON.stringify(ruling.scores)}
+
+Reasoning:
+${ruling.reasoningUsed.join("; ") || "none"}
+
+Context:
+${ruling.contextUsed.join("; ") || "none"}
+`;
+
+  let lastError: unknown;
+
+  for (const model of WRITER_MODELS) {
+    try {
+      const { text } = await generateText({
+        model: groq(model),
+        system,
+        prompt,
+      });
+
+      return cleanSentence(text);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  console.error("writer failed:", lastError);
+
+  return `${ruling.winner} wins according to analysis.`;
 }

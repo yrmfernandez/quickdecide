@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { SLIDER_IDS } from "./sliders";
 
+function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const clipped = value.slice(0, max + 1);
+  return (clipped.slice(0, clipped.lastIndexOf(" ")) || clipped.slice(0, max)).trim();
+}
+
 /** Brain 1 output: extracted choices + dynamic sliders + mobility check. */
 export const ClassifierSchema = z.object({
   choices: z
@@ -34,15 +40,17 @@ export const JudgeSchema = z.object({
       z.object({
         choice: z.string(),
         score: z.number().min(0).max(100),
-        note: z.string().transform((note) => note.slice(0, 140)),
+        note: z.string().transform((note) => truncateText(note, 140)),
       })
     )
     .describe("Score per choice with a terse justification note."),
   contextUsed: z
     .array(z.string())
+    .default([])
     .describe("Only external real-world facts used, e.g. weather or time of day. Do not include slider reasoning here."),
   reasoningUsed: z
-    .array(z.string().transform((reason) => reason.slice(0, 140)))
+    .array(z.string().transform((reason) => truncateText(reason, 220)))
+    .default([])
     .describe("Internal decision reasons, including slider effects and tradeoffs."),
 });
 

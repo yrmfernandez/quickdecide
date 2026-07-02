@@ -71,7 +71,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
   ).join("\n");
 
   const rawObject = await generateObjectSafe({
-    model: groq("qwen/qwen3-32b"),
+    model: groq("openai/gpt-oss-20b"),
     schema: RawClassifierSchema,
     system: `
     You are Brain 1 of QuickDecide.

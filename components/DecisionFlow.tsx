@@ -371,22 +371,18 @@ export default function DecisionFlow() {
                   <span>Options weighed</span>
                   <span>{verdict.scores.length}</span>
                 </div>
-                {verdict.contextUsed.length > 0 && (
-                  <div className="r-meta">
-                    <span>Context</span>
-                    <span style={{ textAlign: "right", maxWidth: "60%" }}>
-                      {verdict.contextUsed.join(" · ")}
-                    </span>
+                {verdict.contextUsed.map((context, index) => (
+                  <div className="r-meta" key={`context-${index}`}>
+                    <span>{index === 0 ? "Context" : ""}</span>
+                    <span style={{ textAlign: "right", maxWidth: "60%" }}>{context}</span>
                   </div>
-                )}
-                {verdict.reasoningUsed.length > 0 && (
-                  <div className="r-meta">
-                    <span>Reasoning</span>
-                    <span style={{ textAlign: "right", maxWidth: "60%" }}>
-                      {verdict.reasoningUsed.join(" · ")}
-                    </span>
+                ))}
+                {verdict.reasoningUsed.map((reason, index) => (
+                  <div className="r-meta" key={`reason-${index}`}>
+                    <span>{index === 0 ? "Reasoning" : ""}</span>
+                    <span style={{ textAlign: "right", maxWidth: "60%" }}>{reason}</span>
                   </div>
-                )}
+                ))}
                 <div className="barcode" />
                 <div className="r-foot">NO REFUNDS · NO SECOND-GUESSING</div>
               </div>

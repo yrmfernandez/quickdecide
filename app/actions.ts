@@ -58,7 +58,8 @@ export async function decideAction(input: {
 
   try {
     const ruling = await judge({ ...input, city });
-    const witty = await write(ruling);
+    const witty = await write(input.rawText, ruling);
+
     return {
       ok: true,
       data: {
