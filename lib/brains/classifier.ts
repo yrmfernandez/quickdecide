@@ -71,7 +71,7 @@ function normalizeSliderId(rawId: string, used: Set<SliderId>): SliderId {
 }
 
 /**
- * Brain 1 — The Classifier (Llama-3.1-8B, ultra-fast).
+ * Brain 1 — The Classifier.
  *
  * Reads the raw brain dump and, via strict Zod structured output:
  * 1. extracts the choices into a clean array
@@ -100,6 +100,10 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     If the prompt is weird, hypothetical, chaotic, multilingual, or written like a stream of consciousness,
     extract the literal decision options first. Do not improve the user's options into different actions.
     Brain 2 can analyze complexity later; your job is faithful parsing.
+
+    TONE RULE: The slider labels must match the vibe of the choices. 
+    If the choices are serious, keep the labels professional. 
+    If the choices are chaotic or absurd, make the slider labels punchy, dramatic, or humorous.
 
     ==================================================
     STEP 1 — EXTRACT THE CHOICES
@@ -227,61 +231,27 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     • They may be humorous.
     • They should sound like something a human would naturally say.
 
-    Examples
+    Examples:
+    
+    If the dilemma is about WORK/CAREER:
+    - Label: "Career Mindset"
+    - Low: "Just collecting a paycheck"
+    - High: "It's my life's mission"
 
-    Generic
+    If the dilemma is about FOOD:
+    - Label: "Flavor vs. Fuel"
+    - Low: "Pure comfort food"
+    - High: "Strictly healthy"
 
-    Comfort Craving
+    If the dilemma is about CHAOTIC/DANGEROUS:
+    - Label: "Risk Assessment"
+    - Low: "Safe and sound"
+    - High: "Total YOLO moment"
 
-    Better
-
-    Breakfast Comfort
-
-    Low
-    Fresh & Fruity
-
-    High
-    Warm & Filling
-
-    --------------------------
-
-    Generic
-
-    Budget Pressure
-
-    Better
-
-    Money Today
-
-    Low
-    Treat Yourself
-
-    High
-    Save Every Dollar
-
-    --------------------------
-
-    Generic
-
-    Energy Level
-
-    Better
-
-    How Much Effort?
-
-    Low
-    Bare Minimum
-
-    High
-    Let's Do This
-
-    IMPORTANT
-
-    You may ONLY rewrite:
-
-    label
-    low
-    high
+    If the dilemma is about TIME:
+    - Label: "Urgency Scale"
+    - Low: "I'll get to it eventually"
+    - High: "Emergency status"
 
     You may NEVER rewrite:
 

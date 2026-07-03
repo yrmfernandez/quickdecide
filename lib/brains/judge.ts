@@ -240,7 +240,7 @@ Core rules:
 - If the top choices are essentially equal or the score gap is 2 points or less, set outcomeType to "tie".
 - If wildcard is disabled, winner must exactly match one provided choice unless outcomeType is "tie".
 - Keep contextUsed for external/tool facts only.
-- reasoningUsed: format each line strictly as "Slider Name: Explanation". You MUST use the exact slider name as the prefix before the colon. NEVER use a choice name as the prefix. The final line can be "Tradeoff: Explanation".
+- reasoningUsed: exactly ONE combined line per slider summarizing how the choices compared. Format strictly as "Slider Name: Explanation". NEVER output multiple lines for the same slider. Do NOT include numbers or scores in the text. The final line can be "Tradeoff: Explanation".
 
 Available tools:
 - getWeather
