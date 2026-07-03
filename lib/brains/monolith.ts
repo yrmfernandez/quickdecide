@@ -1,5 +1,5 @@
 import { stepCountIs, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
-import { groq } from "@ai-sdk/groq";
+import { wrapAcrossKeys } from "../groq-provider";
 import { z } from "zod";
 import { getWeather, getTimeContext, getDateContext, compareSimpleCosts } from "../tools";
 import { generateObjectSafe, generateTextSafe } from "../ai-utils";
@@ -15,19 +15,22 @@ export interface MonobrainInput {
 
 // Helper to safely wrap Groq models with their specific reasoning parameters
 function createReasoningModel(id: string, effort: "none" | "low" | "medium" | "high" | "default", format: "parsed" | "hidden") {
-  return wrapLanguageModel({
-    model: groq(id),
-    middleware: defaultSettingsMiddleware({
-      settings: {
-        providerOptions: {
-          groq: {
-            reasoningFormat: format,
-            reasoningEffort: effort,
+  // One wrapped model per API key -> 24h rotation + failover.
+  return wrapAcrossKeys(id, (base) =>
+    wrapLanguageModel({
+      model: base,
+      middleware: defaultSettingsMiddleware({
+        settings: {
+          providerOptions: {
+            groq: {
+              reasoningFormat: format,
+              reasoningEffort: effort,
+            },
           },
         },
-      },
-    }),
-  });
+      }),
+    })
+  );
 }
 
 // Dynamically construct the chains based on mode to prevent Qwen/GPT cross-parameter crashes
@@ -36,20 +39,20 @@ function getMonoModels(choice: ModelChoice) {
     return [
       createReasoningModel("openai/gpt-oss-120b", "medium", "parsed"),
       createReasoningModel("qwen/qwen3.6-27b", "default", "parsed"),
-    ];
+    ].flat();
   }
   if (choice === "balanced") {
     return [
       createReasoningModel("openai/gpt-oss-120b", "low", "parsed"),
       createReasoningModel("qwen/qwen3.6-27b", "default", "parsed"),
       createReasoningModel("openai/gpt-oss-20b", "low", "parsed"),
-    ];
+    ].flat();
   }
   // Fast
   return [
     createReasoningModel("openai/gpt-oss-20b", "low", "parsed"),
     createReasoningModel("qwen/qwen3.6-27b", "none", "parsed"),
-  ];
+  ].flat();
 }
 
 const STRUCTURER_CHAIN = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
@@ -187,7 +190,7 @@ End with a final summary containing winner, outcomeType, tiedChoices, witty, sco
   );
 
   const object = await generateObjectSafe({
-    models: STRUCTURER_CHAIN.map((id) =>
+    models: STRUCTURER_CHAIN.flatMap((id) =>
       createReasoningModel(id, id.includes("qwen") ? "none" : "low", "hidden")
     ),
     schema: MonolithSchema,

@@ -1,4 +1,4 @@
-import { groq } from "@ai-sdk/groq";
+import { modelAcrossKeys } from "../groq-provider";
 import { z } from "zod";
 import { ClassifierSchema, type ClassifierResult } from "../schemas";
 import { SLIDER_META, SLIDER_IDS, type SliderId } from "../sliders";
@@ -86,7 +86,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
   ).join("\n");
 
   const rawObject = await generateObjectSafe({
-    models: [groq("openai/gpt-oss-20b"), groq("qwen/qwen3.6-27b")],
+    models: ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"].flatMap((id) => modelAcrossKeys(id)),
     schema: RawClassifierSchema,
     system: `
     You are Brain 1 of QuickDecide.

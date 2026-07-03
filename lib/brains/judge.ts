@@ -1,5 +1,5 @@
 import { stepCountIs, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
-import { groq } from "@ai-sdk/groq";
+import { wrapAcrossKeys } from "../groq-provider";
 import { JudgeSchema, type JudgeResult, type DecisionMode, type ModelChoice } from "../schemas";
 import { SLIDER_META, type SliderId } from "../sliders";
 import { getWeather, getTimeContext, getDateContext, compareSimpleCosts } from "../tools";
@@ -25,19 +25,22 @@ export interface JudgeInput {
 
 // Helper to safely wrap Groq models with their specific reasoning parameters
 function createReasoningModel(id: string, effort: "none" | "low" | "medium" | "high" | "default") {
-  return wrapLanguageModel({
-    model: groq(id),
-    middleware: defaultSettingsMiddleware({
-      settings: {
-        providerOptions: {
-          groq: {
-            reasoningFormat: "parsed", // Must be parsed for tool calling
-            reasoningEffort: effort,
+  // Expand across every API key for 24h rotation + failover.
+  return wrapAcrossKeys(id, (base) =>
+    wrapLanguageModel({
+      model: base,
+      middleware: defaultSettingsMiddleware({
+        settings: {
+          providerOptions: {
+            groq: {
+              reasoningFormat: "parsed", // Must be parsed for tool calling
+              reasoningEffort: effort,
+            },
           },
         },
-      },
-    }),
-  });
+      }),
+    })
+  );
 }
 
 // Dynamically construct the chains based on mode to prevent Qwen/GPT cross-parameter crashes
@@ -47,7 +50,7 @@ function getJudgeModels(choice: ModelChoice) {
     return [
       createReasoningModel("openai/gpt-oss-120b", "medium"),
       createReasoningModel("qwen/qwen3.6-27b", "default"),
-    ];
+    ].flat();
   }
   if (choice === "balanced") {
     // Balanced: Low reasoning for GPT, default (enabled) for Qwen
@@ -55,13 +58,13 @@ function getJudgeModels(choice: ModelChoice) {
       createReasoningModel("openai/gpt-oss-120b", "low"),
       createReasoningModel("qwen/qwen3.6-27b", "default"),
       createReasoningModel("openai/gpt-oss-20b", "high"),
-    ];
+    ].flat();
   }
   // Fast: Low reasoning for GPT (lowest allowed), none (disabled) for Qwen
   return [
     createReasoningModel("openai/gpt-oss-20b", "low"),
     createReasoningModel("qwen/qwen3.6-27b", "none"),
-  ];
+  ].flat();
 }
 
 const STRUCTURER_CHAIN = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
@@ -271,20 +274,22 @@ Make the judgment carefully, then provide a final summary with winner, outcomeTy
   const actualContext = formatActualToolContext(result.steps.flatMap((step) => step.toolResults));
 
   const object = await generateObjectSafe({
-    models: STRUCTURER_CHAIN.map((id) =>
-      wrapLanguageModel({
-        model: groq(id),
-        middleware: defaultSettingsMiddleware({
-          settings: {
-            providerOptions: {
-              groq: {
-                // Must be hidden for structured outputs to avoid parsing errors
-                reasoningFormat: "hidden", 
+    models: STRUCTURER_CHAIN.flatMap((id) =>
+      wrapAcrossKeys(id, (base) =>
+        wrapLanguageModel({
+          model: base,
+          middleware: defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                groq: {
+                  // Must be hidden for structured outputs to avoid parsing errors
+                  reasoningFormat: "hidden",
+                },
               },
             },
-          },
-        }),
-      })
+          }),
+        })
+      )
     ),
     schema: JudgeSchema,
     system: `Convert the judge's ruling into JSON.

@@ -1,30 +1,32 @@
 import { generateText, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
-import { groq } from "@ai-sdk/groq";
+import { wrapAcrossKeys } from "../groq-provider";
 import type { DecisionMode, JudgeResult } from "../schemas";
 
 // Helper to safely wrap models with minimal reasoning overhead
 function createWriterModel(id: string, effort: "default" | "low") {
-  return wrapLanguageModel({
-    model: groq(id),
-    middleware: defaultSettingsMiddleware({
-      settings: {
-        providerOptions: {
-          groq: {
-            // MUST be "parsed" so the AI SDK can intercept the thoughts for our console.log
-            reasoningFormat: "parsed",
-            reasoningEffort: effort,
+  // One wrapped model per API key -> 24h rotation + failover.
+  return wrapAcrossKeys(id, (base) =>
+    wrapLanguageModel({
+      model: base,
+      middleware: defaultSettingsMiddleware({
+        settings: {
+          providerOptions: {
+            groq: {
+              reasoningFormat: "parsed",
+              reasoningEffort: effort,
+            },
           },
         },
-      },
-    }),
-  });
+      }),
+    })
+  );
 }
 
 // Map the models to low/default reasoning states so they understand context but stay fast
 const WRITER_MODELS = [
   createWriterModel("openai/gpt-oss-20b", "low"),    // GPT-OSS minimum is "low"
   createWriterModel("qwen/qwen3.6-27b", "default"),  // Qwen enabled
-];
+].flat();
 
 function cleanSentence(text: string): string {
   return (text.trim().split("\n")[0] ?? "")
