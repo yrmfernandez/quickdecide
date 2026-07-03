@@ -80,6 +80,7 @@ export async function decideAction(input: {
   mode: Exclude<DecisionMode, "instant">;
   modelChoice: ModelChoice;
   wildcardAllowed: boolean;
+  mobility?: "transit" | "walking";
 }): Promise<{ ok: true; data: Verdict } | { ok: false; error: string }> {
   if (input.choices.length < 2) {
     return { ok: false, error: "Need at least two choices to judge." };

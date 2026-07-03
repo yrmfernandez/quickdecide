@@ -127,6 +127,7 @@ export default function DecisionFlow() {
           label: s.label,
           low: s.low,
           high: s.high,
+          
         })),
       });
       stopStatus();
@@ -345,7 +346,7 @@ export default function DecisionFlow() {
             })}
 
             <button className="decide-btn" onClick={decide} disabled={stage === "deciding"}>
-              Decide for me → -&gt;
+              Decide for me →
             </button>
             <div className="actions" style={{ marginTop: 14 }}>
               <button className="btn" onClick={() => reset(false)} disabled={stage === "deciding"}>

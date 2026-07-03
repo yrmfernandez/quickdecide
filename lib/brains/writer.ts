@@ -1,12 +1,30 @@
-import { generateText } from "ai";
+import { generateText, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
 import { groq } from "@ai-sdk/groq";
 import type { DecisionMode, JudgeResult } from "../schemas";
 
-// llama-3.1-8b-instant deprecated by Groq on June 17, 2026 — replaced.
+// Helper to safely wrap models with minimal reasoning overhead
+function createWriterModel(id: string, effort: "default" | "low") {
+  return wrapLanguageModel({
+    model: groq(id),
+    middleware: defaultSettingsMiddleware({
+      settings: {
+        providerOptions: {
+          groq: {
+            // MUST be "parsed" so the AI SDK can intercept the thoughts for our console.log
+            reasoningFormat: "parsed", 
+            reasoningEffort: effort,
+          },
+        },
+      },
+    }),
+  });
+}
+
+// Map the models to low/default reasoning states so they understand context but stay fast
 const WRITER_MODELS = [
-  "openai/gpt-oss-20b",
-  "qwen/qwen3.6-27b",
-] as const;
+  createWriterModel("openai/gpt-oss-20b", "low"),    // GPT-OSS minimum is "low"
+  createWriterModel("qwen/qwen3.6-27b", "default"),  // Qwen enabled
+];
 
 function cleanSentence(text: string): string {
   return (text.trim().split("\n")[0] ?? "")
@@ -135,7 +153,6 @@ FUNNY MODE
 If mode is funny AND the situation is not serious:
 
 You may:
-
 - tease the situation
 - lightly roast the dilemma
 - acknowledge how ridiculous it is
@@ -189,7 +206,6 @@ STYLE
 Write exactly ONE natural sentence.
 
 Do NOT mention:
-
 - analysis
 - reasoning
 - confidence score
@@ -197,7 +213,6 @@ Do NOT mention:
 - Brain 2
 
 Never sound robotic.
-
 Avoid repetitive wording.
 
 Aim for roughly 15–35 words, but prioritize sounding natural over hitting an exact length.
@@ -246,13 +261,27 @@ ${ruling.wildcardSuggestion ? "IMPORTANT: acknowledge naturally that a NEW optio
 
   for (const model of WRITER_MODELS) {
     try {
-      const { text } = await generateText({
-        model: groq(model),
+      const result = await generateText({
+        model, 
         system,
         prompt,
       });
 
-      return cleanSentence(text);
+      // 👇 LOGGING BLOCK ADDED HERE 👇
+      console.log("\n🎭 === WRITER'S INTERNAL REASONING ===");
+      const rawReasoning = result.reasoning;
+      // Depending on the AI SDK version, reasoning is either a string or an array of parts
+      const cleanReasoning = Array.isArray(rawReasoning) 
+        ? rawReasoning.map((r: any) => r.text || "").join("\n") 
+        : rawReasoning;
+      console.log(cleanReasoning || "(No reasoning tokens generated)");
+      
+      console.log("\n💬 === WRITER'S FINAL RAW TEXT ===");
+      console.log(result.text);
+      console.log("=====================================\n");
+      // 👆 ======================== 👆
+
+      return cleanSentence(result.text);
     } catch (error) {
       lastError = error;
     }

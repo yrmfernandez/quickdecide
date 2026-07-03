@@ -1,4 +1,4 @@
-import { stepCountIs } from "ai";
+import { stepCountIs, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { JudgeSchema, type JudgeResult, type DecisionMode, type ModelChoice } from "../schemas";
 import { SLIDER_META, type SliderId } from "../sliders";
@@ -20,14 +20,50 @@ export interface JudgeInput {
   mode: Exclude<DecisionMode, "instant">;
   modelChoice: ModelChoice;
   wildcardAllowed: boolean;
+  mobility?: "transit" | "walking";
 }
 
-// Chains verified against Groq's July 2026 lineup (llama-3.x deprecated).
-const JUDGE_CHAINS: Record<ModelChoice, string[]> = {
-  balanced: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"],
-  fast: ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
-  strong: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
-};
+// Helper to safely wrap Groq models with their specific reasoning parameters
+function createReasoningModel(id: string, effort: "none" | "low" | "medium" | "high" | "default") {
+  return wrapLanguageModel({
+    model: groq(id),
+    middleware: defaultSettingsMiddleware({
+      settings: {
+        providerOptions: {
+          groq: {
+            reasoningFormat: "parsed", // Must be parsed for tool calling
+            reasoningEffort: effort,
+          },
+        },
+      },
+    }),
+  });
+}
+
+// Dynamically construct the chains based on mode to prevent Qwen/GPT cross-parameter crashes
+function getJudgeModels(choice: ModelChoice) {
+  if (choice === "strong") {
+    // Strong: Medium reasoning for GPT, default (enabled) for Qwen
+    return [
+      createReasoningModel("openai/gpt-oss-120b", "medium"),
+      createReasoningModel("qwen/qwen3.6-27b", "default"),
+    ];
+  }
+  if (choice === "balanced") {
+    // Balanced: Low reasoning for GPT, default (enabled) for Qwen
+    return [
+      createReasoningModel("openai/gpt-oss-120b", "low"),
+      createReasoningModel("qwen/qwen3.6-27b", "default"),
+      createReasoningModel("openai/gpt-oss-20b", "high"),
+    ];
+  }
+  // Fast: Low reasoning for GPT (lowest allowed), none (disabled) for Qwen
+  return [
+    createReasoningModel("openai/gpt-oss-20b", "low"),
+    createReasoningModel("qwen/qwen3.6-27b", "none"),
+  ];
+}
+
 const STRUCTURER_CHAIN = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
 
 function leanText(value: number, low: string, high: string): string {
@@ -74,7 +110,6 @@ function normalizeJudgeResult(object: JudgeResult, input: JudgeInput): JudgeResu
     };
   });
 
-  // Wildcard: keep the ONE added suggestion as an extra scored row.
   let wildcardSuggestion: string | null = null;
   if (input.wildcardAllowed) {
     const extra =
@@ -104,57 +139,27 @@ function normalizeJudgeResult(object: JudgeResult, input: JudgeInput): JudgeResu
     .map((score) => score.choice);
 
   if (object.outcomeType === "wildcard" && input.wildcardAllowed && wildcardSuggestion) {
-    return {
-      ...object,
-      winner: wildcardSuggestion,
-      outcomeType: "wildcard",
-      tiedChoices: [],
-      wildcardSuggestion,
-      scores,
-    };
+    return { ...object, winner: wildcardSuggestion, outcomeType: "wildcard", tiedChoices: [], wildcardSuggestion, scores };
   }
 
   if (object.outcomeType === "tie" || (second && Math.abs(top.score - second.score) <= 2)) {
-    return {
-      ...object,
-      winner: tiedChoices.join(" / "),
-      outcomeType: "tie",
-      tiedChoices,
-      wildcardSuggestion,
-      scores,
-    };
+    return { ...object, winner: tiedChoices.join(" / "), outcomeType: "tie", tiedChoices, wildcardSuggestion, scores };
   }
 
   const allChoices = wildcardSuggestion ? [...input.choices, wildcardSuggestion] : input.choices;
   const winner = allChoices.find((choice) => fuzzyMatch(choice, object.winner)) ?? top.choice;
   const isWildcardWin = wildcardSuggestion !== null && fuzzyMatch(winner, wildcardSuggestion);
 
-  return {
-    ...object,
-    winner,
-    outcomeType: isWildcardWin ? "wildcard" : "winner",
-    tiedChoices: [],
-    wildcardSuggestion,
-    scores,
-  };
+  return { ...object, winner, outcomeType: isWildcardWin ? "wildcard" : "winner", tiedChoices: [], wildcardSuggestion, scores };
 }
 
-/** Guarantee one consistent reasoning line per slider (synthesized if missing). */
-function enforceSliderReasoning(
-  reasoning: string[],
-  sliders: JudgeInput["sliders"]
-): string[] {
+function enforceSliderReasoning(reasoning: string[], sliders: JudgeInput["sliders"]): string[] {
   const out: string[] = [];
   for (const s of sliders) {
     const meta = SLIDER_META[s.id];
     const label = s.label ?? meta.label;
-    const found = reasoning.find((line) =>
-      line.toLowerCase().includes(label.toLowerCase().slice(0, 12))
-    );
-    out.push(
-      found ??
-        `${label} ${s.value}/100: applied as a ${leanText(s.value, s.low ?? meta.low, s.high ?? meta.high)} preference.`
-    );
+    const found = reasoning.find((line) => line.toLowerCase().includes(label.toLowerCase().slice(0, 12)));
+    out.push(found ?? `${label} ${s.value}/100: applied as a ${leanText(s.value, s.low ?? meta.low, s.high ?? meta.high)} preference.`);
   }
   const extra = reasoning.find((line) => !out.includes(line));
   if (extra) out.push(extra);
@@ -169,24 +174,26 @@ export async function judge(input: JudgeInput): Promise<JudgeResult> {
       const low = s.low ?? meta.low;
       const high = s.high ?? meta.high;
       return [
-        `- ${label} = ${s.value}/100. The user is ${leanText(s.value, low, high)}.`,
-        `  Scale meaning: 0 = "${low}" (canonically: ${meta.low}) ... 100 = "${high}" (canonically: ${meta.high}).`,
-        `  Canonical dimension: ${meta.label}. How to apply: ${meta.judgeHint}`,
+        `=== SLIDER: ${label} ===`,
+        `[0 SCORE DEFINITION]: The choice strongly aligns with "${low}".`,
+        `[100 SCORE DEFINITION]: The choice strongly aligns with "${high}".`,
+        `[USER PREFERENCE]: The user set this slider to ${s.value}/100. They are ${leanText(s.value, low, high)}.`,
+        `[HOW TO JUDGE]: First, determine where each choice falls on the 0-100 scale between "${low}" and "${high}". Then, reward the choices that sit closest to the user's requested ${s.value}/100.`,
       ].join("\n");
     })
-    .join("\n");
+    .join("\n\n");
 
-  const toneRules =
-    input.mode === "funny"
-      ? "PERSONA: chaotic-good game-show judge. Scoring stays rigorous, but every score note lands a light, theme-aware joke. Humor lives in wording only — never in fake facts."
-      : "PERSONA: cold, calculating analyst. Score notes read like an auditor's ledger: terse, quantitative, zero jokes. Each note names the slider or context fact that drove the number (e.g. 'loses 30 pts to urgency at 85/100').";
+  const toneRules = input.mode === "funny"
+    ? "PERSONA: chaotic-good game-show judge. Scoring stays rigorous, but every score note lands a light, theme-aware joke. Humor lives in wording only — never in fake facts."
+    : "PERSONA: cold, calculating analyst. Score notes read like an auditor's ledger: terse, quantitative, zero jokes. Each note names the slider or context fact that drove the number (e.g. 'loses 30 pts to urgency at 85/100').";
 
   const wildcardRules = input.wildcardAllowed
     ? `WILDCARD IS ON: you MUST invent exactly ONE additional option ("the wildcard") the user did not list — practical or delightfully chaotic, but genuinely doable given their context. Score it alongside the originals and report it in the wildcardSuggestion field. It wins ONLY if it honestly outscores everything (then set outcomeType to "wildcard" and winner to it); otherwise the outcome stays among the originals but the suggestion is still shown.`
     : "Wildcard is not allowed. Pick from the provided choices unless the honest result is a tie.";
 
   const result = await generateTextSafe({
-    models: JUDGE_CHAINS[input.modelChoice].map((id) => groq(id)),
+    // Using our safely wrapped models that have their specific reasoning params baked in!
+    models: getJudgeModels(input.modelChoice),
     tools: { getWeather, getTimeContext, getDateContext, compareSimpleCosts },
     stopWhen: stepCountIs(input.modelChoice === "fast" ? 4 : input.modelChoice === "strong" ? 8 : 6),
     system: `You are Brain 2 of QuickDecide.
@@ -195,6 +202,7 @@ You are an autonomous decision judge. Brain 1 has already extracted the user's c
 
 ${toneRules}
 ${wildcardRules}
+${input.mobility ? `CRITICAL CONTEXT: The user has indicated their transportation method is: ${input.mobility.toUpperCase()}. Heavily penalize options that are incompatible with this.` : ""}
 
 Core rules:
 - Do not invent locations, schedules, prices, weather, availability, or user preferences.
@@ -226,15 +234,33 @@ City from request headers: ${input.city ?? "unknown"}
 Make the judgment carefully, then provide a final summary with winner, outcomeType, tiedChoices, scores, contextUsed, and reasoningUsed.`,
   });
 
-  const actualContext = formatActualToolContext(
-    result.steps.flatMap((step) => step.toolResults)
-  );
+  console.log("\n🧠 === JUDGE'S INTERNAL REASONING ===");
+  console.log(result.reasoning || "(No reasoning tokens generated)");
+  
+  console.log("\n⚖️ === JUDGE'S FINAL RAW TEXT ===");
+  console.log(result.text);
+  console.log("=====================================\n");
+
+  const actualContext = formatActualToolContext(result.steps.flatMap((step) => step.toolResults));
 
   const object = await generateObjectSafe({
-    models: STRUCTURER_CHAIN.map((id) => groq(id)),
+    models: STRUCTURER_CHAIN.map((id) =>
+      wrapLanguageModel({
+        model: groq(id),
+        middleware: defaultSettingsMiddleware({
+          settings: {
+            providerOptions: {
+              groq: {
+                // Must be hidden for structured outputs to avoid parsing errors
+                reasoningFormat: "hidden", 
+              },
+            },
+          },
+        }),
+      })
+    ),
     schema: JudgeSchema,
     system: `Convert the judge's ruling into JSON.
-
 Rules:
 - Copy the outcome faithfully.
 - Include one score object for every original choice.
@@ -256,12 +282,5 @@ Rules:
   };
   const normalized = normalizeJudgeResult(filled, input);
 
-  return {
-    ...normalized,
-    contextUsed: actualContext,
-    reasoningUsed: enforceSliderReasoning(
-      normalizeReadableList(normalized.reasoningUsed ?? [], 6),
-      input.sliders
-    ),
-  };
+  return { ...normalized, contextUsed: actualContext, reasoningUsed: enforceSliderReasoning(normalizeReadableList(normalized.reasoningUsed ?? [], 6), input.sliders) };
 }

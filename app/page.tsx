@@ -222,8 +222,9 @@ export default function Home() {
         <div className="land-wrap foot-row">
           <div className="foot-copy">(c) 2026 QuickDecide</div>
           <div className="foot-links">
-            <a href="#app">quickdecide.app</a>
-            <a href="#app">build@quickdecide.app</a>
+            <a href="https://github.com/yrmfernandez/quickdecide" target="_blank" rel="noopener noreferrer">
+             GitHub
+            </a>
           </div>
         </div>
       </footer>

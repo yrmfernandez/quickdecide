@@ -1,4 +1,4 @@
-import { stepCountIs } from "ai";
+import { stepCountIs, wrapLanguageModel, defaultSettingsMiddleware } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { z } from "zod";
 import { getWeather, getTimeContext, getDateContext, compareSimpleCosts } from "../tools";
@@ -13,11 +13,45 @@ export interface MonobrainInput {
   wildcardAllowed: boolean;
 }
 
-const MONO_CHAINS: Record<ModelChoice, string[]> = {
-  balanced: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"],
-  fast: ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
-  strong: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
-};
+// Helper to safely wrap Groq models with their specific reasoning parameters
+function createReasoningModel(id: string, effort: "none" | "low" | "medium" | "high" | "default", format: "parsed" | "hidden") {
+  return wrapLanguageModel({
+    model: groq(id),
+    middleware: defaultSettingsMiddleware({
+      settings: {
+        providerOptions: {
+          groq: {
+            reasoningFormat: format,
+            reasoningEffort: effort,
+          },
+        },
+      },
+    }),
+  });
+}
+
+// Dynamically construct the chains based on mode to prevent Qwen/GPT cross-parameter crashes
+function getMonoModels(choice: ModelChoice) {
+  if (choice === "strong") {
+    return [
+      createReasoningModel("openai/gpt-oss-120b", "medium", "parsed"),
+      createReasoningModel("qwen/qwen3.6-27b", "default", "parsed"),
+    ];
+  }
+  if (choice === "balanced") {
+    return [
+      createReasoningModel("openai/gpt-oss-120b", "low", "parsed"),
+      createReasoningModel("qwen/qwen3.6-27b", "default", "parsed"),
+      createReasoningModel("openai/gpt-oss-20b", "low", "parsed"),
+    ];
+  }
+  // Fast
+  return [
+    createReasoningModel("openai/gpt-oss-20b", "low", "parsed"),
+    createReasoningModel("qwen/qwen3.6-27b", "none", "parsed"),
+  ];
+}
+
 const STRUCTURER_CHAIN = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
 
 const clamped = z.coerce
@@ -119,7 +153,8 @@ export async function runMonobrain(input: MonobrainInput): Promise<Verdict> {
     : "Wildcard is disabled. Choose from the extracted original options unless it is a tie.";
 
   const result = await generateTextSafe({
-    models: MONO_CHAINS[input.modelChoice].map((id) => groq(id)),
+    // 👇 Inject our custom wrapped reasoning models
+    models: getMonoModels(input.modelChoice),
     tools: { getWeather, getTimeContext, getDateContext, compareSimpleCosts },
     stopWhen: stepCountIs(input.modelChoice === "fast" ? 4 : input.modelChoice === "strong" ? 8 : 6),
     system: `You are QuickDecide in instant mode: fast, practical, and accurate.
@@ -141,12 +176,28 @@ End with a final summary containing winner, outcomeType, tiedChoices, witty, sco
     prompt: `Original brain dump: "${input.rawText}"`,
   });
 
+  // 👇 LOGGING BLOCK ADDED HERE 👇
+  console.log("\n⚡ === MONOLITH'S INTERNAL REASONING ===");
+  const rawReasoning = result.reasoning;
+  const cleanReasoning = Array.isArray(rawReasoning) 
+    ? rawReasoning.map((r: any) => r.text || "").join("\n") 
+    : rawReasoning;
+  console.log(cleanReasoning || "(No reasoning tokens generated)");
+  
+  console.log("\n🚀 === MONOLITH'S FINAL RAW TEXT ===");
+  console.log(result.text);
+  console.log("=====================================\n");
+  // 👆 ======================== 👆
+
   const actualContext = formatActualToolContext(
     result.steps.flatMap((step) => step.toolResults)
   );
 
   const object = await generateObjectSafe({
-    models: STRUCTURER_CHAIN.map((id) => groq(id)),
+    // 👇 Wrap the structurer models with hidden reasoning to prevent JSON corruption
+    models: STRUCTURER_CHAIN.map((id) =>
+      createReasoningModel(id, id.includes("qwen") ? "none" : "low", "hidden")
+    ),
     schema: MonolithSchema,
     system: `Convert the free-text ruling into strict JSON.
 
