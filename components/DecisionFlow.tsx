@@ -437,7 +437,7 @@ export default function DecisionFlow() {
                 )}
 
                 <hr />
-                <div className="r-why">{clip(verdict.witty, 180)}</div>
+                <div className="r-why">{verdict.witty}</div>
                 <hr />
 
                 {sliders.map((slider) => (
