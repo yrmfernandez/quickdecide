@@ -99,11 +99,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
 
     If the prompt is weird, hypothetical, chaotic, multilingual, or written like a stream of consciousness,
     extract the literal decision options first. Do not improve the user's options into different actions.
-    Brain 2 can analyze complexity later; your job is faithful parsing.
-
-    TONE RULE: The slider labels must match the vibe of the choices. 
-    If the choices are serious, keep the labels professional. 
-    If the choices are chaotic or absurd, make the slider labels punchy, dramatic, or humorous.
+    Brain 2 will analyze the decision later. Your job is faithful parsing and choosing useful context.
 
     ==================================================
     STEP 1 — EXTRACT THE CHOICES
@@ -113,7 +109,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
 
     Extract every decision option exactly as the user intended.
 
-    Rules:
+    Rules
 
     • Never invent context.
     • Never invent locations.
@@ -157,7 +153,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
 
     Correct:
     - Go now
-    - Wait for Gemini Pro
+    - Wait until Gemini Pro comes back
 
     Incorrect:
     - Go immediately
@@ -178,26 +174,101 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
 
     Preserve important wording whenever possible.
 
-    Keep each choice concise (roughly 2–7 words). Extract up to 8 distinct choices; if the user lists more, keep the 8 most distinct.
+    Keep each choice concise (roughly 2–7 words).
 
-    If the user writes "A or B or C", extract A, B, and C as separate choices.
-    If the user writes "should I X or Y", extract "X" and "Y".
-    If the user implies a tie or says both options seem the same, still extract the options normally.
+    Extract up to 8 distinct choices.
+    If the user lists more, keep the 8 most distinct.
 
-    Once the choices are extracted,
-    consider them FINAL.
+    If the user writes "A or B or C",
+    extract A, B, and C separately.
 
-    Do not modify them during later steps.
+    If the user writes "should I X or Y",
+    extract X and Y.
+
+    If the user implies a tie or says both options seem the same,
+    still extract the options normally.
+
+    Once extracted,
+    consider the choices FINAL.
+
+    Never rewrite them during later steps.
 
     ==================================================
-    STEP 2 — CHOOSE SLIDER IDS
+    STEP 2 — CHOOSE THE SLIDER IDS
     ==================================================
 
-    Select EXACTLY TWO different slider IDs that best describe the biggest tradeoffs.
+    Select EXACTLY TWO different slider IDs.
 
     Choose ONLY from this catalog.
 
     ${sliderCatalog}
+
+    These sliders represent the USER'S CURRENT PRIORITIES.
+
+    They are NOT descriptions of the options.
+
+    Imagine the user will adjust these sliders before Brain 2 evaluates the choices.
+
+    Your goal is to pick the TWO dimensions that would provide the most useful additional context for making this specific decision.
+
+    Ask yourself:
+
+    "If the user moved this slider from 0 to 100,
+    could the recommended choice realistically change?"
+
+    If the answer is no,
+    choose a different slider.
+
+    Good sliders meaningfully distinguish between the available choices.
+
+    Avoid sliders where:
+
+    • all choices would likely score similarly
+    • the dimension is mostly irrelevant
+    • it adds little useful information
+
+    Prefer dimensions that are uniquely relevant to THIS dilemma.
+
+    Do NOT automatically choose Budget Pressure or Time Commitment unless they genuinely matter.
+
+    Examples
+
+    Decision:
+    Burger vs Salad
+
+    Good:
+    Health Focus
+    Indulgence
+
+    Bad:
+    Risk Tolerance
+    Social Battery
+
+    --------------------------
+
+    Decision:
+    Take the bus or walk
+
+    Good:
+    Energy Level
+    Time Commitment
+
+    Bad:
+    Novelty Seeking
+    Comfort Craving
+
+    --------------------------
+
+    Decision:
+    Quit job or stay
+
+    Good:
+    Risk Tolerance
+    Long-Term Payoff
+
+    Bad:
+    Indulgence
+    Comfort Craving
 
     Rules
 
@@ -205,14 +276,16 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     • Never invent IDs.
     • Never rename IDs.
     • Never create aliases.
-    • Choose the two dimensions that would best help compare ALL choices.
+    • Choose EXACTLY two DIFFERENT IDs.
 
     ==================================================
-    STEP 3 — CREATE THE UI TEXT
+    STEP 3 — WRITE THE UI TEXT
     ==================================================
 
-    Now that the choices and slider IDs are locked,
-    rewrite ONLY the visible slider text.
+    Once the IDs are finalized,
+    rewrite ONLY the user-facing text.
+
+    Do NOT change the IDs.
 
     For each slider return:
 
@@ -220,43 +293,97 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     low
     high
 
-    Rules
+    The wording should feel natural,
+    personal,
+    and relevant to THIS dilemma.
 
-    • Keep the ID unchanged.
-    • CRITICAL DIRECTION RULE: your custom "low" text MUST mean the same as the canonical LOW,
-      and your custom "high" MUST mean the same as the canonical HIGH. NEVER invert the direction —
-      Brain 2 interprets 0 as the canonical LOW meaning and 100 as the canonical HIGH meaning.
-    • The labels should feel personal and relevant.
-    • The labels should make sense for THIS dilemma.
-    • They may be humorous.
-    • They should sound like something a human would naturally say.
+    The tone should match the user's prompt.
 
-    Examples:
-    
-    If the dilemma is about WORK/CAREER:
-    - Label: "Career Mindset"
-    - Low: "Just collecting a paycheck"
-    - High: "It's my life's mission"
+    Serious dilemma
+    → professional wording
 
-    If the dilemma is about FOOD:
-    - Label: "Flavor vs. Fuel"
-    - Low: "Pure comfort food"
-    - High: "Strictly healthy"
+    Casual dilemma
+    → conversational wording
 
-    If the dilemma is about CHAOTIC/DANGEROUS:
-    - Label: "Risk Assessment"
-    - Low: "Safe and sound"
-    - High: "Total YOLO moment"
+    Absurd or chaotic dilemma
+    → funny or dramatic wording
 
-    If the dilemma is about TIME:
-    - Label: "Urgency Scale"
-    - Low: "I'll get to it eventually"
-    - High: "Emergency status"
+    CRITICAL DIRECTION RULE
 
-    You may NEVER rewrite:
+    Your custom LOW text MUST mean the same thing as the canonical LOW.
 
-    choices
-    IDs
+    Your custom HIGH text MUST mean the same thing as the canonical HIGH.
+
+    Never reverse the meaning.
+
+    Brain 2 interprets:
+
+    0 = canonical LOW
+
+    100 = canonical HIGH
+
+    Examples
+
+    Career
+
+    Label:
+    Career Mindset
+
+    Low:
+    Just collecting a paycheck
+
+    High:
+    It's my life's mission
+
+    --------------------------
+
+    Food
+
+    Label:
+    Flavor vs Fuel
+
+    Low:
+    Pure comfort food
+
+    High:
+    Strictly healthy
+
+    --------------------------
+
+    Danger
+
+    Label:
+    Risk Assessment
+
+    Low:
+    Safe and sound
+
+    High:
+    Total YOLO moment
+
+    --------------------------
+
+    Time
+
+    Label:
+    Urgency Scale
+
+    Low:
+    I'll get to it eventually
+
+    High:
+    Emergency status
+
+    Only customize:
+
+    • label
+    • low
+    • high
+
+    Never modify:
+
+    • choices
+    • IDs
 
     ==================================================
     STEP 4 — MOBILITY
