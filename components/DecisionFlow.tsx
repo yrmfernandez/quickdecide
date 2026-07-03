@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { analyzeAction, decideAction, instantDecideAction } from "@/app/actions";
 import type { ClassifierResult, DecisionMode, ModelChoice, Verdict } from "@/lib/schemas";
 
@@ -44,6 +44,20 @@ export default function DecisionFlow() {
   const [, startTransition] = useTransition();
   const statusTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // Enter on the verdict screen re-runs the decision with the same text.
+  useEffect(() => {
+    if (stage !== "verdict") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        reset(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
 
   function cycleStatus(len: number) {
     setStatusIdx(0);
@@ -195,7 +209,7 @@ export default function DecisionFlow() {
     if (verdict.outcomeType === "wildcard") return true;
     return s.choice !== verdict.winner;
   });
-  const showInput = (stage === "dump" || stage === "analyzing" || stage === "deciding") && !verdict;
+  const showInput = (stage === "dump" || stage === "analyzing" || (stage === "deciding" && mode === "instant")) && !verdict;
   const isBusy = stage === "analyzing" || stage === "deciding";
 
   return (
@@ -205,7 +219,7 @@ export default function DecisionFlow() {
         <div className="dot" />
         <div className="dot" />
         <div className="url">quickdecide.app</div>
-        {stage === "verdict" && <div className="hint">Receipt ready</div>}
+        {stage === "verdict" && <div className="hint">Enter to redecide</div>}
       </div>
 
       <div className="app-body">
@@ -218,8 +232,12 @@ export default function DecisionFlow() {
               onChange={(e) => setRawText(e.target.value)}
               placeholder={'"We are stuck between tacos, cooking pasta, or ordering pepperoni pizza."'}
               disabled={isBusy}
+              maxLength={1000}
               aria-label="Describe what you are deciding between"
             />
+            <div className={`char-counter ${rawText.length > 900 ? "warn" : ""}`}>
+              {rawText.length}/1000
+            </div>
 
             <div className="control-grid">
               <div>
@@ -272,7 +290,7 @@ export default function DecisionFlow() {
               onClick={mode === "instant" ? instantDecide : analyze}
               disabled={isBusy || rawText.trim().length < 8}
             >
-              {mode === "instant" ? "Decide instantly ->" : "Analyze options ->"}
+              {mode === "instant" ? "Decide instantly →" : "Analyze options →"}
             </button>
 
             {isBusy && (
@@ -327,11 +345,11 @@ export default function DecisionFlow() {
             })}
 
             <button className="decide-btn" onClick={decide} disabled={stage === "deciding"}>
-              Decide for me -&gt;
+              Decide for me → -&gt;
             </button>
             <div className="actions" style={{ marginTop: 14 }}>
               <button className="btn" onClick={() => reset(false)} disabled={stage === "deciding"}>
-                Start over
+                ↺ Start over
               </button>
             </div>
 
@@ -379,7 +397,12 @@ export default function DecisionFlow() {
 
                 {losers.map((score) => (
                   <div className="rline strike" key={score.choice}>
-                    <span>{score.choice}</span>
+                    <span>
+                      {score.choice}
+                      {verdict.wildcardSuggestion === score.choice && (
+                        <span className="wild-tag">WILD</span>
+                      )}
+                    </span>
                     <span className="score">{Math.round(score.score)} pts</span>
                   </div>
                 ))}
@@ -397,8 +420,11 @@ export default function DecisionFlow() {
 
                 {verdict.outcomeType === "wildcard" && (
                   <div className="rline win">
-                    <span>{verdict.winner}</span>
-                    <span className="score">wildcard</span>
+                    <span>
+                      {verdict.winner}
+                      <span className="wild-tag">WILD</span>
+                    </span>
+                    <span className="score">wildcard ✓</span>
                   </div>
                 )}
 
@@ -443,13 +469,13 @@ export default function DecisionFlow() {
 
             <div className="actions">
               <button className="btn" onClick={() => reset(false)}>
-                Start over
+                ↺ Start over
               </button>
               <button className="btn" onClick={() => reset(true)}>
-                Decide again
+                ↻ Decide again
               </button>
               <button className="btn" onClick={copyResult}>
-                {copied ? "Copied!" : "Copy result"}
+                ⧉ {copied ? "Copied!" : "Copy result"}
               </button>
             </div>
 

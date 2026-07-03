@@ -1,8 +1,8 @@
-import { generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { z } from "zod";
 import { getWeather, getTimeContext, getDateContext, compareSimpleCosts } from "../tools";
-import { generateObjectSafe } from "../ai-utils";
+import { generateObjectSafe, generateTextSafe } from "../ai-utils";
 import { formatActualToolContext } from "../tool-context";
 import type { ModelChoice, Verdict } from "../schemas";
 
@@ -13,28 +13,42 @@ export interface MonobrainInput {
   wildcardAllowed: boolean;
 }
 
-const MONO_MODELS: Record<ModelChoice, string> = {
-  balanced: "openai/gpt-oss-120b",
-  fast: "openai/gpt-oss-20b",
-  strong: "openai/gpt-oss-120b",
+const MONO_CHAINS: Record<ModelChoice, string[]> = {
+  balanced: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"],
+  fast: ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
+  strong: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
 };
+const STRUCTURER_CHAIN = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
+
+const clamped = z.coerce
+  .number()
+  .catch(50)
+  .transform((n) => (Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 50));
 
 const MonolithSchema = z.object({
-  winner: z.string().describe("The exact winning choice, tie label, or wildcard suggestion."),
-  outcomeType: z.enum(["winner", "tie", "wildcard"]).default("winner"),
-  tiedChoices: z.array(z.string()).default([]),
-  witty: z.string().describe("ONE concise sentence, max 22 words. No hashtags, no emoji, no quotes."),
+  winner: z.coerce.string().catch("").transform((s) => s.slice(0, 80)),
+  outcomeType: z
+    .string()
+    .catch("winner")
+    .transform((v): "winner" | "tie" | "wildcard" => {
+      const s = v.toLowerCase().trim();
+      return s === "tie" || s === "wildcard" ? s : "winner";
+    }),
+  tiedChoices: z.array(z.coerce.string()).catch([]).default([]),
+  wildcardSuggestion: z.coerce.string().transform((s) => s.slice(0, 80)).nullable().catch(null).default(null),
+  witty: z.coerce.string().catch("").describe("ONE concise sentence, max 22 words. No hashtags, no emoji, no quotes."),
   scores: z
     .array(
       z.object({
-        choice: z.string(),
-        score: z.number().min(0).max(100),
-        note: z.string().transform((note) => note.slice(0, 140)),
+        choice: z.coerce.string().catch("").transform((s) => s.slice(0, 80)),
+        score: clamped,
+        note: z.coerce.string().catch("").transform((note) => note.slice(0, 200)),
       })
     )
-    .describe("Score per original choice out of 100 with a terse justification note."),
-  contextUsed: z.array(z.string()).default([]),
-  reasoningUsed: z.array(z.string().transform((reason) => reason.slice(0, 140))).default([]),
+    .catch([])
+    .describe("Score per choice out of 100 with a terse justification note."),
+  contextUsed: z.array(z.coerce.string()).catch([]).default([]),
+  reasoningUsed: z.array(z.coerce.string().transform((reason) => reason.slice(0, 260))).catch([]).default([]),
 });
 
 type MonolithResult = z.infer<typeof MonolithSchema>;
@@ -67,7 +81,13 @@ function normalizeMonolith(object: MonolithResult, wildcardAllowed: boolean): Mo
   const second = sorted[1];
 
   if (object.outcomeType === "wildcard" && wildcardAllowed) {
-    return { ...object, winner: object.winner.slice(0, 80), tiedChoices: [], scores };
+    return {
+      ...object,
+      winner: object.winner.slice(0, 80),
+      wildcardSuggestion: object.wildcardSuggestion ?? object.winner.slice(0, 80),
+      tiedChoices: [],
+      scores,
+    };
   }
 
   if (object.outcomeType === "tie" || (second && Math.abs(top.score - second.score) <= 2)) {
@@ -95,13 +115,13 @@ function normalizeMonolith(object: MonolithResult, wildcardAllowed: boolean): Mo
 
 export async function runMonobrain(input: MonobrainInput): Promise<Verdict> {
   const wildcardRule = input.wildcardAllowed
-    ? "Wildcard is allowed only when a clearly better outside suggestion follows from the user's text."
+    ? `WILDCARD IS ON: after extracting the user's options, you MUST invent exactly ONE additional option they did not list — practical or delightfully chaotic, but genuinely doable. Score it with the rest and report it in wildcardSuggestion. It wins ONLY if it honestly outscores everything (outcomeType "wildcard"). Your witty sentence MUST acknowledge that you added a new option.`
     : "Wildcard is disabled. Choose from the extracted original options unless it is a tie.";
 
-  const result = await generateText({
-    model: groq(MONO_MODELS[input.modelChoice]),
+  const result = await generateTextSafe({
+    models: MONO_CHAINS[input.modelChoice].map((id) => groq(id)),
     tools: { getWeather, getTimeContext, getDateContext, compareSimpleCosts },
-    stopWhen: stepCountIs(input.modelChoice === "fast" ? 4 : 6),
+    stopWhen: stepCountIs(input.modelChoice === "fast" ? 4 : input.modelChoice === "strong" ? 8 : 6),
     system: `You are QuickDecide in instant mode: fast, practical, and accurate.
 
 ${input.city ? `The user is located in ${input.city}.` : "User location is unknown."}
@@ -126,7 +146,7 @@ End with a final summary containing winner, outcomeType, tiedChoices, witty, sco
   );
 
   const object = await generateObjectSafe({
-    model: groq(input.modelChoice === "fast" ? "openai/gpt-oss-20b" : "llama-3.1-8b-instant"),
+    models: STRUCTURER_CHAIN.map((id) => groq(id)),
     schema: MonolithSchema,
     system: `Convert the free-text ruling into strict JSON.
 
@@ -137,7 +157,7 @@ Rules:
 - Keep witty under 22 words, with no quotes or emoji.
 - contextUsed must contain only external/tool facts; the app will replace it with actual tool output.`,
     prompt: result.text,
-    shapeHint: `{"winner": "...", "outcomeType": "winner", "tiedChoices": [], "witty": "...", "scores": [{"choice": "...", "score": 0, "note": "..."}], "contextUsed": [], "reasoningUsed": []}`,
+    shapeHint: `{"winner": "...", "outcomeType": "winner", "tiedChoices": [], "wildcardSuggestion": null, "witty": "...", "scores": [{"choice": "...", "score": 0, "note": "..."}], "contextUsed": [], "reasoningUsed": []}`,
   });
 
   const filled: MonolithResult = {
@@ -151,6 +171,7 @@ Rules:
 
   return {
     ...normalized,
+    wildcardSuggestion: normalized.wildcardSuggestion ?? null,
     mode: "instant",
     wildcardAllowed: input.wildcardAllowed,
     contextUsed: actualContext,

@@ -1196,3 +1196,28 @@ footer.landing {
   font-size: 12px;
   color: var(--ink-soft);
 }
+
+/* ---------- char counter ---------- */
+.char-counter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #6f6a5b;
+  text-align: right;
+  margin-top: 6px;
+}
+.char-counter.warn {
+  color: var(--stamp);
+}
+
+/* ---------- wildcard tag ---------- */
+.wild-tag {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  margin-left: 8px;
+  background: var(--kraft);
+  color: var(--ink);
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  vertical-align: middle;
+}

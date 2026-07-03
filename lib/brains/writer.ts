@@ -2,9 +2,10 @@ import { generateText } from "ai";
 import { groq } from "@ai-sdk/groq";
 import type { DecisionMode, JudgeResult } from "../schemas";
 
+// llama-3.1-8b-instant deprecated by Groq on June 17, 2026 — replaced.
 const WRITER_MODELS = [
   "openai/gpt-oss-20b",
-  "llama-3.1-8b-instant",
+  "qwen/qwen3.6-27b",
 ] as const;
 
 function cleanSentence(text: string): string {
@@ -65,8 +66,8 @@ YOUR PERSONALITY
 
 Mode:
 ${mode === "funny"
-  ? "friendly, witty, slightly sarcastic, emotionally aware"
-  : "calm, supportive, and straightforward"}
+  ? "friendly, witty, slightly sarcastic, emotionally aware — a best friend done with the indecision"
+  : "a cold, calculating analyst: precise, composed, quietly confident. ZERO jokes, ZERO sarcasm. You cite the decisive factor like a consultant delivering a finding (e.g. 'The numbers favor X — urgency settled it.')"}
 
 Imagine someone just told you their dilemma and the final decision.
 Your response should feel like a natural reaction before mentioning the winner.
@@ -235,6 +236,10 @@ ${ruling.reasoningUsed.join("; ") || "none"}
 
 Context:
 ${ruling.contextUsed.join("; ") || "none"}
+
+Wildcard suggestion added by the judge:
+${ruling.wildcardSuggestion ?? "none"}
+${ruling.wildcardSuggestion ? "IMPORTANT: acknowledge naturally that a NEW option was added that the user did not originally list." : ""}
 `;
 
   let lastError: unknown;

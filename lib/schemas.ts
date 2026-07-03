@@ -13,56 +13,108 @@ function truncateText(value: string, max: number): string {
   return (clipped.slice(0, clipped.lastIndexOf(" ")) || clipped.slice(0, max)).trim();
 }
 
+/**
+ * VALIDATION PHILOSOPHY: never hard-fail on sloppy model output.
+ * Long strings get truncated, out-of-range numbers get clamped, wrong-case
+ * enums get normalized, and missing optionals get defaults. A Zod error
+ * should only mean "the output was unusable", not "a label was 81 chars".
+ */
+
+const clampedScore = z.coerce
+  .number()
+  .catch(50)
+  .transform((n) => (Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 50));
+
+const shortText = (max: number) =>
+  z
+    .coerce.string()
+    .catch("")
+    .transform((s) => truncateText(s.trim(), max));
+
 /** Brain 1 output: extracted choices + dynamic sliders + mobility check. */
 export const ClassifierSchema = z.object({
   choices: z
-    .array(z.string().min(1).max(80))
+    .array(z.coerce.string().min(1).transform((s) => truncateText(s.trim(), 80)))
     .min(2)
-    .max(6)
-    .describe("The distinct options the user is deciding between, short labels."),
+    .transform((arr) => {
+      // Dedupe (case-insensitive) and cap at 8 for the deep pipeline.
+      const seen = new Set<string>();
+      return arr
+        .filter((c) => {
+          const key = c.toLowerCase();
+          if (seen.has(key) || c.length === 0) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 8);
+    })
+    .describe("The distinct options the user is deciding between, short labels (max 8)."),
   sliders: z
     .array(
       z.object({
         id: z.enum(SLIDER_IDS),
-        label: z.string().min(1).max(48).describe("A custom, highly relevant label for this slider based on the user's text."),
-        low: z.string().min(1).max(48).describe("Witty label for value 0"),
-        high: z.string().min(1).max(48).describe("Witty label for value 100"),
+        label: shortText(48).describe(
+          "A custom, highly relevant label for this slider based on the user's text."
+        ),
+        low: shortText(48).describe("Label for value 0 — must match the canonical LOW meaning."),
+        high: shortText(48).describe("Label for value 100 — must match the canonical HIGH meaning."),
       })
     )
     .length(2)
-    .describe("Exactly two DISTINCT sliders most relevant to this decision, with labels dynamically customized to fit the context."),
+    .describe(
+      "Exactly two DISTINCT sliders most relevant to this decision, with labels dynamically customized to fit the context."
+    ),
   requires_mobility_toggle: z
     .boolean()
-    .describe("True ONLY if the decision involves physically traveling, commuting, or leaving the house where walking vs. transit matters."),
+    .catch(false)
+    .describe(
+      "True ONLY if the decision involves physically traveling, commuting, or leaving the house where walking vs. transit matters."
+    ),
 });
 
 export type ClassifierResult = z.infer<typeof ClassifierSchema>;
 
+const outcomeEnum = z
+  .string()
+  .catch("winner")
+  .transform((v): "winner" | "tie" | "wildcard" => {
+    const s = v.toLowerCase().trim();
+    return s === "tie" || s === "wildcard" ? s : "winner";
+  });
+
 /** Brain 2 output: the dry, mathematical ruling. */
 export const JudgeSchema = z.object({
-  winner: z.string().describe("The winning choice, tie label, or wildcard suggestion."),
-  outcomeType: z
-    .enum(["winner", "tie", "wildcard"])
-    .default("winner")
-    .describe("winner = one provided option wins, tie = provided options are effectively equal, wildcard = a better outside suggestion."),
-  tiedChoices: z.array(z.string()).default([]).describe("Only filled when outcomeType is tie."),
+  winner: shortText(80).describe("The winning choice, tie label, or wildcard suggestion."),
+  outcomeType: outcomeEnum
+    .describe(
+      "winner = one provided option wins, tie = provided options are effectively equal, wildcard = the added wildcard suggestion wins."
+    ),
+  tiedChoices: z.array(z.coerce.string()).catch([]).default([]),
+  wildcardSuggestion: shortText(80)
+    .nullable()
+    .catch(null)
+    .default(null)
+    .describe("The ONE extra option added by the judge when wildcard is enabled, else null."),
   scores: z
     .array(
       z.object({
-        choice: z.string(),
-        score: z.number().min(0).max(100),
-        note: z.string().transform((note) => truncateText(note, 140)),
+        choice: shortText(80),
+        score: clampedScore,
+        note: shortText(200),
       })
     )
+    .catch([])
     .describe("Score per choice with a terse justification note."),
   contextUsed: z
-    .array(z.string())
+    .array(z.coerce.string())
+    .catch([])
     .default([])
-    .describe("Only external real-world facts used, e.g. weather or time of day. Do not include slider reasoning here."),
+    .describe("Only external real-world facts used, e.g. weather or time of day."),
   reasoningUsed: z
-    .array(z.string().transform((reason) => truncateText(reason, 220)))
+    .array(z.coerce.string().transform((reason) => truncateText(reason, 260)))
+    .catch([])
     .default([])
-    .describe("Internal decision reasons, including slider effects and tradeoffs."),
+    .describe("One line per slider explaining how it weighed the scores, plus at most one extra tradeoff."),
 });
 
 export type JudgeResult = z.infer<typeof JudgeSchema>;
@@ -72,6 +124,7 @@ export interface Verdict {
   winner: string;
   outcomeType: "winner" | "tie" | "wildcard";
   tiedChoices: string[];
+  wildcardSuggestion: string | null;
   mode: DecisionMode;
   wildcardAllowed: boolean;
   witty: string;

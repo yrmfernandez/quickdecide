@@ -15,6 +15,12 @@ export const SLIDER_IDS = [
   "health_focus",
   "adventure_appetite",
   "comfort_craving",
+  "risk_tolerance",
+  "urgency",
+  "long_term_payoff",
+  "social_pressure",
+  "indulgence",
+  "novelty_seeking",
 ] as const;
 
 export type SliderId = (typeof SLIDER_IDS)[number];
@@ -83,6 +89,54 @@ export const SLIDER_META: Record<SliderId, SliderMeta> = {
     high: "Surprise me",
     judgeHint:
       "Low = favor familiar/safe options. High = favor novel or risky options.",
+  },
+  risk_tolerance: {
+    id: "risk_tolerance",
+    label: "Risk Tolerance",
+    low: "Play it safe",
+    high: "Roll the dice",
+    judgeHint:
+      "Low = penalize options with uncertain outcomes. High = risky/uncertain options are acceptable or even preferred.",
+  },
+  urgency: {
+    id: "urgency",
+    label: "Urgency",
+    low: "No rush at all",
+    high: "Needed yesterday",
+    judgeHint:
+      "Low = deadlines don't matter, favor quality. High = favor whatever resolves the situation fastest.",
+  },
+  long_term_payoff: {
+    id: "long_term_payoff",
+    label: "Long-term Payoff",
+    low: "Tonight only matters",
+    high: "Future me matters",
+    judgeHint:
+      "Low = optimize for immediate satisfaction. High = favor the option with the best long-term consequences.",
+  },
+  social_pressure: {
+    id: "social_pressure",
+    label: "Social Pressure",
+    low: "Nobody's watching",
+    high: "Everyone will know",
+    judgeHint:
+      "Low = ignore what others think. High = favor the option that looks best to other people involved.",
+  },
+  indulgence: {
+    id: "indulgence",
+    label: "Indulgence",
+    low: "Discipline mode",
+    high: "Treat yourself",
+    judgeHint:
+      "Low = favor the responsible/restrained option. High = favor the pleasurable, indulgent option guilt-free.",
+  },
+  novelty_seeking: {
+    id: "novelty_seeking",
+    label: "Novelty Seeking",
+    low: "The usual, please",
+    high: "Something new",
+    judgeHint:
+      "Low = favor familiar, proven options. High = favor options the user hasn't tried before.",
   },
   comfort_craving: {
     id: "comfort_craving",

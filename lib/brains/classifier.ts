@@ -42,6 +42,20 @@ const SLIDER_ID_ALIASES: Record<string, SliderId> = {
   novelty: "adventure_appetite",
   comfort: "comfort_craving",
   cozy: "comfort_craving",
+  risk: "risk_tolerance",
+  safety: "risk_tolerance",
+  urgent: "urgency",
+  deadline: "urgency",
+  rush: "urgency",
+  future: "long_term_payoff",
+  long_term: "long_term_payoff",
+  peer: "social_pressure",
+  reputation: "social_pressure",
+  indulge: "indulgence",
+  treat: "indulgence",
+  guilt: "indulgence",
+  fresh: "novelty_seeking",
+  variety: "novelty_seeking",
 };
 
 function normalizeSliderId(rawId: string, used: Set<SliderId>): SliderId {
@@ -67,11 +81,12 @@ function normalizeSliderId(rawId: string, used: Set<SliderId>): SliderId {
 export async function classify(rawText: string): Promise<ClassifierResult> {
   // We only show the model the IDs and standard labels so it knows the general concept
   const sliderCatalog = SLIDER_IDS.map(
-    (id) => `- ${id}: (e.g., "${SLIDER_META[id].label}")`
+    (id) =>
+      `- ${id}: "${SLIDER_META[id].label}" | canonical LOW (0) = "${SLIDER_META[id].low}" | canonical HIGH (100) = "${SLIDER_META[id].high}"`
   ).join("\n");
 
   const rawObject = await generateObjectSafe({
-    model: groq("openai/gpt-oss-20b"),
+    models: [groq("openai/gpt-oss-20b"), groq("qwen/qwen3.6-27b")],
     schema: RawClassifierSchema,
     system: `
     You are Brain 1 of QuickDecide.
@@ -159,7 +174,7 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
 
     Preserve important wording whenever possible.
 
-    Keep each choice concise (roughly 2–7 words).
+    Keep each choice concise (roughly 2–7 words). Extract up to 8 distinct choices; if the user lists more, keep the 8 most distinct.
 
     If the user writes "A or B or C", extract A, B, and C as separate choices.
     If the user writes "should I X or Y", extract "X" and "Y".
@@ -204,6 +219,9 @@ export async function classify(rawText: string): Promise<ClassifierResult> {
     Rules
 
     • Keep the ID unchanged.
+    • CRITICAL DIRECTION RULE: your custom "low" text MUST mean the same as the canonical LOW,
+      and your custom "high" MUST mean the same as the canonical HIGH. NEVER invert the direction —
+      Brain 2 interprets 0 as the canonical LOW meaning and 100 as the canonical HIGH meaning.
     • The labels should feel personal and relevant.
     • The labels should make sense for THIS dilemma.
     • They may be humorous.
