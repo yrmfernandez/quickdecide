@@ -76,12 +76,7 @@ function leanText(value: number, low: string, high: string): string {
 
 function normalizeReadableList(items: string[], maxItems = 4): string[] {
   return items
-    .flatMap((item) =>
-      item
-        .replace(/^[\s*.-]+/, "")
-        .split(/(?<=[.!?])\s+/)
-        .map((part) => part.trim())
-    )
+    .map((item) => item.replace(/^[\s*.-]+/, "").trim()) // Just strip leading bullets/spaces
     .filter((item) => item.length > 0)
     .filter((item) => !/non[- ]?existent|fake tool|web search|search tool/i.test(item))
     .slice(0, maxItems);
@@ -153,16 +148,48 @@ function normalizeJudgeResult(object: JudgeResult, input: JudgeInput): JudgeResu
   return { ...object, winner, outcomeType: isWildcardWin ? "wildcard" : "winner", tiedChoices: [], wildcardSuggestion, scores };
 }
 
-function enforceSliderReasoning(reasoning: string[], sliders: JudgeInput["sliders"]): string[] {
+function enforceSliderReasoning(
+  reasoning: string[],
+  sliders: JudgeInput["sliders"]
+): string[] {
   const out: string[] = [];
+  const usedLines = new Set<string>();
+
   for (const s of sliders) {
     const meta = SLIDER_META[s.id];
     const label = s.label ?? meta.label;
-    const found = reasoning.find((line) => line.toLowerCase().includes(label.toLowerCase().slice(0, 12)));
-    out.push(found ?? `${label} ${s.value}/100: applied as a ${leanText(s.value, s.low ?? meta.low, s.high ?? meta.high)} preference.`);
+    
+    // Grab the first 10 characters of the label to fuzzy-match the line
+    const labelPrefix = label.toLowerCase().slice(0, 10);
+    
+    const found = reasoning.find((line) => 
+      !usedLines.has(line) && line.toLowerCase().includes(labelPrefix)
+    );
+
+    if (found) {
+      usedLines.add(found);
+      const cleaned = found
+        .replace(/^[-\*\s]+/, "") 
+        .replace(/\s*\d{1,3}\/100/g, "") 
+        .replace(/={2,}/g, "") 
+        .trim();
+      out.push(cleaned);
+    } else {
+      out.push(`${label}: Applied as a ${leanText(s.value, s.low ?? meta.low, s.high ?? meta.high)} preference.`);
+    }
   }
-  const extra = reasoning.find((line) => !out.includes(line));
-  if (extra) out.push(extra);
+  
+  const extra = reasoning.find((line) => !usedLines.has(line));
+  if (extra) {
+    out.push(
+      extra
+        .replace(/^[-\*\s]+/, "")
+        .replace(/\s*\d{1,3}\/100/g, "") // Scrub the extra line too just in case
+        .replace(/={2,}/g, "")
+        .trim()
+    );
+  }
+  
   return out;
 }
 
@@ -213,7 +240,7 @@ Core rules:
 - If the top choices are essentially equal or the score gap is 2 points or less, set outcomeType to "tie".
 - If wildcard is disabled, winner must exactly match one provided choice unless outcomeType is "tie".
 - Keep contextUsed for external/tool facts only.
-- reasoningUsed FORMAT CONTRACT: exactly one line per slider, formatted "<Slider label> <value>/100: <how it moved the ranking in this situation>", plus AT MOST one extra line for a decisive tradeoff or real-world fact. No other reasoning lines.
+- reasoningUsed: format each line strictly as "Slider Name: Explanation". You MUST use the exact slider name as the prefix before the colon. NEVER use a choice name as the prefix. The final line can be "Tradeoff: Explanation".
 
 Available tools:
 - getWeather
@@ -267,7 +294,7 @@ Rules:
 - Use outcomeType "tie" if the ruling says the top choices are effectively equal.
 - Use outcomeType "wildcard" only for an outside suggestion.
 - contextUsed may be empty because the app replaces it with actual tool results.
-- reasoningUsed: exactly one line per slider in the format "<Slider label> <value>/100: <effect>", plus at most one extra tradeoff line.
+- reasoningUsed: format each line strictly as "Slider Name: Explanation". You MUST use the exact slider name as the prefix before the colon. NEVER use a choice name as the prefix. The final line can be "Tradeoff: Explanation".
 - wildcardSuggestion: the added wildcard option's name if one was proposed, else null.`,
     prompt: result.text,
     shapeHint: `{"winner": "...", "outcomeType": "winner", "tiedChoices": [], "wildcardSuggestion": null, "scores": [{"choice": "...", "score": 0, "note": "..."}], "contextUsed": [], "reasoningUsed": []}`,

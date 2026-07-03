@@ -451,22 +451,43 @@ export default function DecisionFlow() {
                   <span>Options weighed</span>
                   <span>{verdict.scores.length}</span>
                 </div>
+                
                 {verdict.contextUsed.map((context, index) => (
                   <div className="r-meta wrap" key={`context-${index}`}>
                     <span>{index === 0 ? "Context" : ""}</span>
-                    <span>{clip(context, 120)}</span>
+                    {/* Removed clip() so the full context is visible */}
+                    <span className="receipt-text">{context}</span>
                   </div>
                 ))}
-                {verdict.reasoningUsed.map((reason, index) => (
-                  <div className="r-meta wrap" key={`reason-${index}`}>
-                    <span>{index === 0 ? "Reasoning" : ""}</span>
-                    <span>{clip(reason, 120)}</span>
-                  </div>
-                ))}
-                <div className="barcode" />
-                <div className="r-foot">NO REFUNDS - NO SECOND-GUESSING</div>
-              </div>
-            </div>
+                
+                {verdict.reasoningUsed.map((reason, index) => {
+                  // Split the string at the first colon to isolate the label from the explanation
+                  const colonIndex = reason.indexOf(":");
+                  const hasLabel = colonIndex !== -1;
+                  const label = hasLabel ? reason.slice(0, colonIndex) : "";
+                  const explanation = hasLabel ? reason.slice(colonIndex + 1) : reason;
+
+                  return (
+                    <div className="r-meta wrap" key={`reason-${index}`}>
+                      <span>{index === 0 ? "Reasoning" : ""}</span>
+                      <span className="receipt-text">
+                        {hasLabel ? (
+                          <>
+                            <strong>{label}:</strong>
+                            {explanation}
+                          </>
+                        ) : (
+                          reason
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+        
+        <div className="barcode" />
+        <div className="r-foot">NO REFUNDS - NO SECOND-GUESSING</div>
+      </div>
+    </div>
 
             <div className="actions">
               <button className="btn" onClick={() => reset(false)}>

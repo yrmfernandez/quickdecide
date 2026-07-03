@@ -87,14 +87,10 @@ const MonolithSchema = z.object({
 
 type MonolithResult = z.infer<typeof MonolithSchema>;
 
+// 👇 FIXED: Removed the aggressive split() regex so labels with "?" don't break
 function normalizeReadableList(items: string[], maxItems = 4): string[] {
   return items
-    .flatMap((item) =>
-      item
-        .replace(/^[\s*.-]+/, "")
-        .split(/(?<=[.!?])\s+/)
-        .map((part) => part.trim())
-    )
+    .map((item) => item.replace(/^[\s*.-]+/, "").trim())
     .filter((item) => item.length > 0)
     .filter((item) => !/non[- ]?existent|fake tool|web search|search tool/i.test(item))
     .slice(0, maxItems);
@@ -153,7 +149,6 @@ export async function runMonobrain(input: MonobrainInput): Promise<Verdict> {
     : "Wildcard is disabled. Choose from the extracted original options unless it is a tie.";
 
   const result = await generateTextSafe({
-    // 👇 Inject our custom wrapped reasoning models
     models: getMonoModels(input.modelChoice),
     tools: { getWeather, getTimeContext, getDateContext, compareSimpleCosts },
     stopWhen: stepCountIs(input.modelChoice === "fast" ? 4 : input.modelChoice === "strong" ? 8 : 6),
@@ -176,7 +171,6 @@ End with a final summary containing winner, outcomeType, tiedChoices, witty, sco
     prompt: `Original brain dump: "${input.rawText}"`,
   });
 
-  // 👇 LOGGING BLOCK ADDED HERE 👇
   console.log("\n⚡ === MONOLITH'S INTERNAL REASONING ===");
   const rawReasoning = result.reasoning;
   const cleanReasoning = Array.isArray(rawReasoning) 
@@ -187,14 +181,12 @@ End with a final summary containing winner, outcomeType, tiedChoices, witty, sco
   console.log("\n🚀 === MONOLITH'S FINAL RAW TEXT ===");
   console.log(result.text);
   console.log("=====================================\n");
-  // 👆 ======================== 👆
 
   const actualContext = formatActualToolContext(
     result.steps.flatMap((step) => step.toolResults)
   );
 
   const object = await generateObjectSafe({
-    // 👇 Wrap the structurer models with hidden reasoning to prevent JSON corruption
     models: STRUCTURER_CHAIN.map((id) =>
       createReasoningModel(id, id.includes("qwen") ? "none" : "low", "hidden")
     ),
@@ -206,7 +198,9 @@ Rules:
 - Use outcomeType "tie" when choices are essentially equal.
 - Use outcomeType "wildcard" only for an outside suggestion.
 - Keep witty under 22 words, with no quotes or emoji.
-- contextUsed must contain only external/tool facts; the app will replace it with actual tool output.`,
+- contextUsed must contain only external/tool facts; the app will replace it with actual tool output.
+// 👇 FIXED: Enforce clean Label: Explanation formatting
+- reasoningUsed: format each line strictly as "Label: Explanation" without stating numeric scores (e.g., "50/100").`,
     prompt: result.text,
     shapeHint: `{"winner": "...", "outcomeType": "winner", "tiedChoices": [], "wildcardSuggestion": null, "witty": "...", "scores": [{"choice": "...", "score": 0, "note": "..."}], "contextUsed": [], "reasoningUsed": []}`,
   });
