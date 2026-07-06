@@ -62,7 +62,7 @@ export default function DecisionFlow() {
   function cycleStatus(len: number) {
     setStatusIdx(0);
     if (statusTimer.current) clearInterval(statusTimer.current);
-    statusTimer.current = setInterval(() => setStatusIdx((i) => (i + 1) % len), 1400);
+    statusTimer.current = setInterval(() => setStatusIdx((i) => (i + 1) % len), 900);
   }
 
   function stopStatus() {
@@ -176,6 +176,17 @@ export default function DecisionFlow() {
     setValues({});
     setVerdict(null);
     setCopied(false);
+    setError(null);
+    stopStatus();
+    scrollHome();
+  }
+
+  // Return to the prompt from the slider stage without wiping the input.
+  function goBack() {
+    setStage("dump");
+    setChoices([]);
+    setSliders([]);
+    setValues({});
     setError(null);
     stopStatus();
     scrollHome();
@@ -349,6 +360,9 @@ export default function DecisionFlow() {
               Decide for me →
             </button>
             <div className="actions" style={{ marginTop: 14 }}>
+              <button className="btn" onClick={goBack} disabled={stage === "deciding"}>
+                ← Back
+              </button>
               <button className="btn" onClick={() => reset(false)} disabled={stage === "deciding"}>
                 ↺ Start over
               </button>

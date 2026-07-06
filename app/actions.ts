@@ -20,7 +20,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (first) {
     // brief backoff, then one more attempt — most Groq hiccups are transient
-    await new Promise((r) => setTimeout(r, 900));
+    await new Promise((r) => setTimeout(r, 400));
     try {
       return await fn();
     } catch {
